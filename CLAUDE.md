@@ -13,10 +13,13 @@ IoT devices, CaseHub agents, or infrastructure resources. Domains plug in via SP
 **Tier:** Foundation (alongside casehub-platform, casehub-ledger, casehub-work, casehub-qhorus in the build order)
 
 **Design philosophy:** Generic first, domains layered on top. The runtime is written once. Each new domain
-contributes only domain-specific knowledge via four SPIs: GoalCompiler, ActualStateAdapter, NodeProvisioner,
-FaultPolicy. Workflow execution delegates to casehub-engine-flow. Human nodes generate casehub-work WorkItems.
+contributes only domain-specific knowledge via SPIs: GoalCompiler, ActualStateAdapter, NodeProvisioner,
+FaultPolicy, EventSource. Execution delegates to TransitionExecutor SPI — SimpleTransitionExecutor (default)
+for lightweight deployments; CaseTransitionExecutor (engine-adapter, classpath-activated) for case-backed
+execution with Worker(Workflow) phases via casehub-engine-flow.
 
-**Research doc:** `docs/superpowers/research/2026-06-07-desired-state-management-research.md` (in casehub-parent)
+**Research doc:** `docs/superpowers/research/2026-06-07-desired-state-management-research.md`
+**Design spec:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md`
 
 ## Build Commands
 
@@ -30,46 +33,58 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | Module | Artifact | Root package | Purpose |
 |--------|----------|-------------|---------|
 | `api/` | `casehub-desiredstate-api` | `io.casehub.desiredstate.api` | Core SPIs + domain types. Pure Java, Mutiny provided, CDI annotations provided. |
-| `runtime/` | `casehub-desiredstate` | `io.casehub.desiredstate.runtime` | TransitionPlanner, ReconciliationLoop, FaultPolicyEngine. Quarkus extension. |
+| `runtime/` | `casehub-desiredstate` | `io.casehub.desiredstate.runtime` | TransitionPlanner, ReconciliationLoop, FaultPolicyEngine, ImmutableDesiredStateGraph, SimpleTransitionExecutor. Quarkus library. |
 | `testing/` | `casehub-desiredstate-testing` | `io.casehub.desiredstate.testing` | Mock SPIs and test fixtures. **Test scope only.** |
+| `engine-adapter/` | `casehub-desiredstate-engine` | `io.casehub.desiredstate.engine` | CaseTransitionExecutor — orchestration-tier bridge. Generates cases with Worker(Workflow) phases. |
+| `examples/dungeon/` | `casehub-desiredstate-example-dungeon` | `io.casehub.desiredstate.example.dungeon` | Nefarious Dungeons — teaching example implementing all SPIs with 2D tile visualizer. |
 
 ## Core SPIs (api/)
 
 | SPI | Signature | Domain responsibility |
 |-----|-----------|----------------------|
-| `GoalCompiler<G>` | `compile(G goals, Constraints, DomainData) → DesiredStateGraph` | Translate goal declaration into node graph |
+| `GoalCompiler<G>` | `compile(G goals, DesiredStateGraphFactory) → DesiredStateGraph` | Translate goal declaration into node graph |
 | `ActualStateAdapter` | `readActual(DesiredStateGraph) → ActualState` | Read current reality from domain sources |
 | `NodeProvisioner` | `provision(DesiredNode, ProvisionContext) → ProvisionResult` | Create/update a single node |
-| `NodeProvisioner` | `deprovision(ActualNode, DeprovisionContext) → DeprovisionResult` | Remove a single node |
-| `FaultPolicy` | `onFault(FaultEvent, DesiredStateGraph) → GraphMutation` | Mutate graph in response to fault |
+| `NodeProvisioner` | `deprovision(DesiredNode, DeprovisionContext) → DeprovisionResult` | Remove a single node |
+| `ReactiveNodeProvisioner` | `provision/deprovision → Uni<Result>` | Reactive variant of NodeProvisioner |
+| `FaultPolicy` | `onFault(FaultEvent, DesiredStateGraph) → List<GraphMutation>` | Mutate graph in response to fault |
 | `EventSource` | `stream() → Multi<StateEvent>` | Stream actual-state events into reconciliation loop |
+| `TransitionExecutor` | `execute(TransitionPlan) → Uni<TransitionResult>` | Execute a transition plan (SPI'd — simple or case-backed) |
+| `DesiredStateGraph` | query + mutation methods | SPI interface — graph backing store is pluggable |
+| `DesiredStateGraphFactory` | `empty()`, `of(nodes, deps)` | Creates graph instances |
 
 ## Core Runtime Types (api/)
 
 | Type | Purpose |
 |------|---------|
-| `DesiredStateGraph` | Directed acyclic graph — `List<DesiredNode>`, `List<Dependency>` |
 | `DesiredNode` | `id`, `type`, `spec` (opaque domain payload), `requiresHuman` |
-| `TransitionPlan` | Pruning-first ordered steps — `removals: List<OrderedStep>`, `additions: List<OrderedStep>` |
-| `ReconciliationResult` | `resolved`, `drifted`, `faulted` node lists + `mutations` |
-| `NodeSpec` | Opaque domain-specific node specification |
-| `FaultEvent` | Fault event with node reference and fault type |
-| `GraphMutation` | Add/remove/update node in the desired graph |
+| `NodeSpec` | Marker interface — domains implement with typed records |
+| `NodeId`, `NodeType`, `Dependency` | Value types for graph identity and edges |
+| `TransitionPlan` | Pruning-first ordered steps — `removals`, `additions`, `before`/`after` graphs |
+| `TransitionResult` | Per-node `StepOutcome` map (Succeeded/Failed/Skipped) |
+| `ActualState` | Map of `NodeId → NodeStatus` (PRESENT/ABSENT/DEGRADED/UNKNOWN) |
+| `ReconciliationResult` | `resolved`, `drifted`, `faulted` node sets + `mutations` |
+| `FaultEvent` | Node + `FaultType` + detail |
+| `GraphMutation` | Sealed interface — AddNode, RemoveNode, UpdateNode, AddDependency, RemoveDependency |
+| `ProvisionContext` | `tenancyId` + `DesiredStateGraph` |
+| `ProvisionResult`, `DeprovisionResult` | Sealed — Success / Failed(reason) |
+| `StepOutcome` | Sealed — Succeeded / Failed(reason) / Skipped(reason) |
 
 ## Ordering Rule — Pruning Before Growing
 
 1. Diff desired graph vs actual state
 2. Plan removal workflows (leaves before roots — dependency-aware)
 3. Plan addition workflows (roots before leaves — dependency-aware)
-4. Execute sequentially via casehub-engine-flow
+4. Execute via TransitionExecutor SPI (simple sequential or case-backed Worker(Workflow) phases)
 
 This ensures no dangling dependencies and no half-removed states.
 
 ## Human Nodes
 
-`DesiredNode.requiresHuman = true` → provisioning step generates a `WorkItem` (casehub-work) instead
-of calling `NodeProvisioner`. ReconciliationLoop awaits WorkItem completion event via `CaseSignalSink`
-before marking node provisioned and proceeding to dependent nodes.
+`DesiredNode.requiresHuman = true` → `SimpleTransitionExecutor` skips the node (StepOutcome.Skipped).
+`CaseTransitionExecutor` (engine-adapter) generates a `humanTask` binding in the case definition —
+the engine's HITL infrastructure handles WorkItem creation and completion. The reconciliation loop
+detects human node completion on the next cycle via ActualStateAdapter.
 
 ## Cross-Repo Conventions
 

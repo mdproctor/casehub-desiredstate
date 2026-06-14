@@ -1,0 +1,190 @@
+package io.casehub.desiredstate.runtime;
+
+import io.casehub.desiredstate.api.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TransitionPlannerTest {
+
+    private TransitionPlanner planner;
+    private DesiredStateGraphFactory factory;
+
+    @BeforeEach
+    void setUp() {
+        planner = new TransitionPlanner();
+        factory = new DefaultDesiredStateGraphFactory();
+    }
+
+    @Test
+    void emptyDiff_producesEmptyPlan() {
+        DesiredStateGraph desired = factory.empty();
+        ActualState actual = new ActualState(Map.of());
+
+        TransitionPlan plan = planner.plan(desired, actual);
+
+        assertTrue(plan.isEmpty());
+        assertEquals(0, plan.removals().size());
+        assertEquals(0, plan.additions().size());
+    }
+
+    @Test
+    void allAbsent_producesAdditionsOnly() {
+        DesiredNode nodeA = new DesiredNode(
+            NodeId.of("a"), NodeType.of("test"), new TestSpec("A"), false
+        );
+        DesiredNode nodeB = new DesiredNode(
+            NodeId.of("b"), NodeType.of("test"), new TestSpec("B"), false
+        );
+
+        DesiredStateGraph desired = factory.of(List.of(nodeA, nodeB), List.of());
+        ActualState actual = new ActualState(Map.of(
+            NodeId.of("a"), NodeStatus.ABSENT,
+            NodeId.of("b"), NodeStatus.ABSENT
+        ));
+
+        TransitionPlan plan = planner.plan(desired, actual);
+
+        assertEquals(0, plan.removals().size());
+        assertEquals(2, plan.additions().size());
+        assertTrue(plan.additions().stream().allMatch(s -> s.action() == StepAction.PROVISION));
+    }
+
+    @Test
+    void presentButNotDesired_producesRemovalsOnly() {
+        DesiredStateGraph desired = factory.empty();
+        ActualState actual = new ActualState(Map.of(
+            NodeId.of("orphan1"), NodeStatus.PRESENT,
+            NodeId.of("orphan2"), NodeStatus.PRESENT
+        ));
+
+        TransitionPlan plan = planner.plan(desired, actual);
+
+        assertEquals(2, plan.removals().size());
+        assertEquals(0, plan.additions().size());
+        assertTrue(plan.removals().stream().allMatch(s -> s.action() == StepAction.DEPROVISION));
+    }
+
+    @Test
+    void additionsOrdering_rootsFirst() {
+        // A → B → C (C depends on B, B depends on A)
+        DesiredNode nodeA = new DesiredNode(
+            NodeId.of("a"), NodeType.of("test"), new TestSpec("A"), false
+        );
+        DesiredNode nodeB = new DesiredNode(
+            NodeId.of("b"), NodeType.of("test"), new TestSpec("B"), false
+        );
+        DesiredNode nodeC = new DesiredNode(
+            NodeId.of("c"), NodeType.of("test"), new TestSpec("C"), false
+        );
+
+        Dependency bDependsOnA = new Dependency(NodeId.of("b"), NodeId.of("a"));
+        Dependency cDependsOnB = new Dependency(NodeId.of("c"), NodeId.of("b"));
+
+        DesiredStateGraph desired = factory.of(
+            List.of(nodeA, nodeB, nodeC),
+            List.of(bDependsOnA, cDependsOnB)
+        );
+
+        ActualState actual = new ActualState(Map.of(
+            NodeId.of("a"), NodeStatus.ABSENT,
+            NodeId.of("b"), NodeStatus.ABSENT,
+            NodeId.of("c"), NodeStatus.ABSENT
+        ));
+
+        TransitionPlan plan = planner.plan(desired, actual);
+
+        assertEquals(3, plan.additions().size());
+
+        // Extract order
+        List<NodeId> order = plan.additions().stream()
+            .map(step -> step.node().id())
+            .toList();
+
+        // A must come before B, B must come before C
+        int idxA = order.indexOf(NodeId.of("a"));
+        int idxB = order.indexOf(NodeId.of("b"));
+        int idxC = order.indexOf(NodeId.of("c"));
+
+        assertTrue(idxA < idxB, "A should come before B");
+        assertTrue(idxB < idxC, "B should come before C");
+    }
+
+    @Test
+    void additionsOrdering_diamondDependency() {
+        // Diamond: A, B depends on A, C depends on A, D depends on B and C
+        DesiredNode nodeA = new DesiredNode(
+            NodeId.of("a"), NodeType.of("test"), new TestSpec("A"), false
+        );
+        DesiredNode nodeB = new DesiredNode(
+            NodeId.of("b"), NodeType.of("test"), new TestSpec("B"), false
+        );
+        DesiredNode nodeC = new DesiredNode(
+            NodeId.of("c"), NodeType.of("test"), new TestSpec("C"), false
+        );
+        DesiredNode nodeD = new DesiredNode(
+            NodeId.of("d"), NodeType.of("test"), new TestSpec("D"), false
+        );
+
+        DesiredStateGraph desired = factory.of(
+            List.of(nodeA, nodeB, nodeC, nodeD),
+            List.of(
+                new Dependency(NodeId.of("b"), NodeId.of("a")),
+                new Dependency(NodeId.of("c"), NodeId.of("a")),
+                new Dependency(NodeId.of("d"), NodeId.of("b")),
+                new Dependency(NodeId.of("d"), NodeId.of("c"))
+            )
+        );
+
+        ActualState actual = new ActualState(Map.of(
+            NodeId.of("a"), NodeStatus.ABSENT,
+            NodeId.of("b"), NodeStatus.ABSENT,
+            NodeId.of("c"), NodeStatus.ABSENT,
+            NodeId.of("d"), NodeStatus.ABSENT
+        ));
+
+        TransitionPlan plan = planner.plan(desired, actual);
+
+        List<NodeId> order = plan.additions().stream()
+            .map(step -> step.node().id())
+            .toList();
+
+        int idxA = order.indexOf(NodeId.of("a"));
+        int idxB = order.indexOf(NodeId.of("b"));
+        int idxC = order.indexOf(NodeId.of("c"));
+        int idxD = order.indexOf(NodeId.of("d"));
+
+        assertTrue(idxA < idxB, "A before B");
+        assertTrue(idxA < idxC, "A before C");
+        assertTrue(idxB < idxD, "B before D");
+        assertTrue(idxC < idxD, "C before D");
+    }
+
+    @Test
+    void mixedChanges_separatesAdditionsAndRemovals() {
+        DesiredNode nodeA = new DesiredNode(
+            NodeId.of("a"), NodeType.of("test"), new TestSpec("A"), false
+        );
+
+        DesiredStateGraph desired = factory.of(List.of(nodeA), List.of());
+        ActualState actual = new ActualState(Map.of(
+            NodeId.of("a"), NodeStatus.ABSENT,
+            NodeId.of("orphan"), NodeStatus.PRESENT
+        ));
+
+        TransitionPlan plan = planner.plan(desired, actual);
+
+        assertEquals(1, plan.removals().size());
+        assertEquals(1, plan.additions().size());
+
+        assertEquals(NodeId.of("orphan"), plan.removals().get(0).node().id());
+        assertEquals(NodeId.of("a"), plan.additions().get(0).node().id());
+    }
+
+    // Helper test spec
+    record TestSpec(String value) implements NodeSpec {}
+}

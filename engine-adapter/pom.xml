@@ -10,12 +10,11 @@
         <version>0.2-SNAPSHOT</version>
     </parent>
 
-    <artifactId>casehub-desiredstate</artifactId>
+    <artifactId>casehub-desiredstate-engine</artifactId>
 
-    <name>CaseHub Desired State :: Runtime</name>
-    <description>Runtime implementation — TransitionPlanner (topological sort, pruning-first ordering),
-        ReconciliationLoop (event-driven diff against actual state), FaultPolicyEngine (rule evaluation,
-        graph mutation), SimpleTransitionExecutor. Execution delegation via TransitionExecutor SPI.</description>
+    <name>CaseHub Desired State :: Engine Adapter</name>
+    <description>Orchestration-tier bridge — CaseTransitionExecutor generates cases with
+        Worker(Workflow) phases for prune/grow, executes via CaseHubRuntime.</description>
 
     <dependencies>
         <dependency>
@@ -24,19 +23,23 @@
         </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
-            <artifactId>casehub-platform-api</artifactId>
+            <artifactId>casehub-engine-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
-            <artifactId>casehub-platform</artifactId>
+            <artifactId>casehub-engine-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-engine-flow</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-work-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-vertx</artifactId>
         </dependency>
 
         <dependency>
@@ -51,17 +54,7 @@
         </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
-            <artifactId>casehub-platform-testing</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.casehub</groupId>
             <artifactId>casehub-desiredstate-testing</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.awaitility</groupId>
-            <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
