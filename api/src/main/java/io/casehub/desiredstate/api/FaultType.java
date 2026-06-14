@@ -1,0 +1,6 @@
+package io.casehub.desiredstate.api;
+
+public enum FaultType {
+    NODE_DESTROYED, NODE_DEGRADED, PROVISION_FAILED, DEPROVISION_FAILED,
+    HUMAN_NODE_TIMEOUT, DEPENDENCY_UNAVAILABLE
+}

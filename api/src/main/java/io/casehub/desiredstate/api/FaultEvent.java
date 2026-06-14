@@ -1,0 +1,10 @@
+package io.casehub.desiredstate.api;
+
+import java.util.Objects;
+
+public record FaultEvent(NodeId node, FaultType type, String detail) {
+    public FaultEvent {
+        Objects.requireNonNull(node, "FaultEvent.node must not be null");
+        Objects.requireNonNull(type, "FaultEvent.type must not be null");
+    }
+}

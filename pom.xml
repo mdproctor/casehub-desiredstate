@@ -24,6 +24,8 @@
         <module>api</module>
         <module>runtime</module>
         <module>testing</module>
+        <module>engine-adapter</module>
+        <module>examples/dungeon</module>
     </modules>
 
     <properties>
@@ -62,6 +64,11 @@
                 <version>${project.version}</version>
                 <scope>test</scope>
             </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-desiredstate-engine</artifactId>
+                <version>${project.version}</version>
+            </dependency>
 
             <!-- Platform — Path, Preferences, CurrentPrincipal -->
             <dependency>
@@ -81,7 +88,17 @@
                 <scope>test</scope>
             </dependency>
 
-            <!-- Engine Flow — workflow execution delegation -->
+            <!-- Engine — workflow execution delegation -->
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-engine-api</artifactId>
+                <version>${version.io.casehub}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-engine-common</artifactId>
+                <version>${version.io.casehub}</version>
+            </dependency>
             <dependency>
                 <groupId>io.casehub</groupId>
                 <artifactId>casehub-engine-flow</artifactId>
@@ -95,11 +112,7 @@
                 <version>${version.io.casehub}</version>
             </dependency>
 
-            <dependency>
-                <groupId>io.smallrye.reactive</groupId>
-                <artifactId>mutiny</artifactId>
-                <scope>provided</scope>
-            </dependency>
+            <!-- mutiny version managed by quarkus-bom; scope=provided declared in child modules -->
             <dependency>
                 <groupId>org.assertj</groupId>
                 <artifactId>assertj-core</artifactId>
