@@ -214,6 +214,73 @@ class ReconciliationLoopTest {
             "Fault feedback should have added replacement node to desired graph. Planned: " + plannedNodeIds);
     }
 
+    @Test
+    void driftedNodes_produceNodeDegradedFaultEvents() {
+        // Desired: one node "a". Actual: "a" is DRIFTED.
+        DesiredNode nodeA = node("a");
+        DesiredStateGraph desired = factory.of(List.of(nodeA), List.of());
+        actualAdapter.setStatuses(Map.of(NodeId.of("a"), NodeStatus.DRIFTED));
+
+        // Capturing fault policy that records all FaultEvents
+        List<FaultEvent> capturedEvents = new CopyOnWriteArrayList<>();
+        FaultPolicy capturingPolicy = (event, current) -> {
+            capturedEvents.add(event);
+            return List.of();
+        };
+        faultEngine = new FaultPolicyEngine(List.of(capturingPolicy));
+
+        loop = new ReconciliationLoop(
+            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            TEST_DEBOUNCE, TEST_RESYNC);
+
+        loop.start("test-tenant", desired);
+
+        // Wait for the initial reconciliation to process the DRIFTED node
+        await().atMost(Duration.ofSeconds(2)).until(() -> !capturedEvents.isEmpty());
+
+        // Should have exactly one NODE_DEGRADED event for node "a"
+        assertEquals(1, capturedEvents.size(), "Expected one fault event for drifted node");
+        FaultEvent event = capturedEvents.get(0);
+        assertEquals(NodeId.of("a"), event.node());
+        assertEquals(FaultType.NODE_DEGRADED, event.type());
+        assertEquals("Node drifted from desired spec", event.detail());
+    }
+
+    @Test
+    void driftDetection_runsBeforeEmptyPlanCheck() {
+        // Desired: one node "a". Actual: "a" is DRIFTED (present but drifted — plan is empty).
+        DesiredNode nodeA = node("a");
+        DesiredStateGraph desired = factory.of(List.of(nodeA), List.of());
+
+        // FaultPolicy: on NODE_DEGRADED for "a", add a new node "a-fix"
+        DesiredNode fixNode = new DesiredNode(
+            NodeId.of("a-fix"), NodeType.of("test"), new TestSpec("fix"), false);
+        FaultPolicy addFixPolicy = (event, current) -> {
+            if (event.type() == FaultType.NODE_DEGRADED && event.node().equals(NodeId.of("a"))) {
+                return List.of(new GraphMutation.AddNode(fixNode));
+            }
+            return List.of();
+        };
+        faultEngine = new FaultPolicyEngine(List.of(addFixPolicy));
+
+        loop = new ReconciliationLoop(
+            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            TEST_DEBOUNCE, TEST_RESYNC);
+
+        // Actual: "a" is DRIFTED (not ABSENT, so node "a" won't be planned for addition),
+        // but "a-fix" is UNKNOWN (will be planned for addition after mutation).
+        actualAdapter.setStatuses(Map.of(NodeId.of("a"), NodeStatus.DRIFTED));
+
+        loop.start("test-tenant", desired);
+
+        // Wait for an executed plan that contains "a-fix" — proves drift detection
+        // ran before the empty-plan check and added the fix node via fault policy
+        await().atMost(Duration.ofSeconds(2)).until(() ->
+            testExecutor.executedPlans.stream().anyMatch(plan ->
+                plan.additions().stream().anyMatch(step ->
+                    step.node().id().equals(NodeId.of("a-fix")))));
+    }
+
     // --- Test helpers ---
 
     private DesiredNode node(String id) {

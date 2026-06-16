@@ -218,31 +218,47 @@ public class ReconciliationLoop {
                 // 1. Read actual state
                 ActualState actual = actualStateAdapter.readActual(desired);
 
-                // 2. Plan transition
+                // 2. Detect DRIFTED nodes → NODE_DEGRADED fault events
+                DesiredStateGraph mutated = desired;
+                for (Map.Entry<NodeId, DesiredNode> entry : desired.nodes().entrySet()) {
+                    NodeStatus status = actual.statuses().getOrDefault(entry.getKey(), NodeStatus.UNKNOWN);
+                    if (status == NodeStatus.DRIFTED) {
+                        FaultEvent faultEvent = new FaultEvent(
+                            entry.getKey(), FaultType.NODE_DEGRADED, "Node drifted from desired spec");
+                        List<GraphMutation> mutations = faultPolicyEngine.evaluate(faultEvent, mutated);
+                        for (GraphMutation mutation : mutations) {
+                            mutated = mutated.withMutation(mutation);
+                        }
+                    }
+                }
+                if (mutated != desired) {
+                    desiredRef.compareAndSet(desired, mutated);
+                    desired = mutated;
+                }
+
+                // 3. Plan transition
                 TransitionPlan plan = planner.plan(desired, actual);
                 if (plan.isEmpty()) {
                     return;
                 }
 
-                // 3. Execute transition
+                // 4. Execute transition
                 TransitionResult result = executor.execute(plan).await().indefinitely();
 
-                // 4. Fault feedback — evaluate failed outcomes through fault policies
+                // 5. Fault feedback — accumulate all mutations, single CAS
+                mutated = desired;
                 for (Map.Entry<NodeId, StepOutcome> entry : result.outcomes().entrySet()) {
                     if (entry.getValue() instanceof StepOutcome.Failed failed) {
                         FaultEvent faultEvent = new FaultEvent(
                             entry.getKey(), FaultType.PROVISION_FAILED, failed.reason());
-
-                        List<GraphMutation> mutations = faultPolicyEngine.evaluate(faultEvent, desired);
-                        if (!mutations.isEmpty()) {
-                            // Apply mutations to desired graph
-                            DesiredStateGraph mutated = desired;
-                            for (GraphMutation mutation : mutations) {
-                                mutated = mutated.withMutation(mutation);
-                            }
-                            desiredRef.compareAndSet(desired, mutated);
+                        List<GraphMutation> mutations = faultPolicyEngine.evaluate(faultEvent, mutated);
+                        for (GraphMutation mutation : mutations) {
+                            mutated = mutated.withMutation(mutation);
                         }
                     }
+                }
+                if (mutated != desired) {
+                    desiredRef.compareAndSet(desired, mutated);
                 }
             } catch (Exception e) {
                 LOG.log(Level.WARNING,
