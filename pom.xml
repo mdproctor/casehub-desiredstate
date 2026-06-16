@@ -26,6 +26,7 @@
         <module>testing</module>
         <module>engine-adapter</module>
         <module>examples/dungeon</module>
+        <module>examples/pipeline</module>
     </modules>
 
     <properties>
