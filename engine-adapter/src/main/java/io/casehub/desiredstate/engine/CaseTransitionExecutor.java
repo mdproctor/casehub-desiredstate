@@ -5,6 +5,7 @@ import io.casehub.api.model.Binding;
 import io.casehub.api.model.Capability;
 import io.casehub.api.model.CaseDefinition;
 import io.casehub.api.model.ContextChangeTrigger;
+import io.casehub.api.model.HumanTaskTarget;
 import io.casehub.api.model.Worker;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.OrderedStep;
@@ -108,9 +109,19 @@ public class CaseTransitionExecutor implements TransitionExecutor {
             bindings.add(buildBinding("prune-binding", dispatchCapability));
         }
 
-        if (!plan.additions().isEmpty()) {
+        List<OrderedStep> automatedAdditions = new ArrayList<>();
+        List<OrderedStep> humanAdditions = new ArrayList<>();
+        for (OrderedStep step : plan.additions()) {
+            if (step.node().requiresHuman()) {
+                humanAdditions.add(step);
+            } else {
+                automatedAdditions.add(step);
+            }
+        }
+
+        if (!automatedAdditions.isEmpty()) {
             Workflow growWorkflow = workflowGenerator.generate(
-                plan.additions(), NAMESPACE, "grow-phase", CASE_VERSION
+                automatedAdditions, NAMESPACE, "grow-phase", CASE_VERSION
             );
 
             Worker growWorker = Worker.builder()
@@ -122,9 +133,20 @@ public class CaseTransitionExecutor implements TransitionExecutor {
 
             workers.add(growWorker);
             if (plan.removals().isEmpty()) {
-                // Only add binding once for the capability
                 bindings.add(buildBinding("grow-binding", dispatchCapability));
             }
+        }
+
+        for (OrderedStep step : humanAdditions) {
+            HumanTaskTarget humanTask = HumanTaskTarget.inline()
+                .title("Review: " + step.node().id().value())
+                .build();
+
+            bindings.add(Binding.builder()
+                .name("human-" + step.node().id().value())
+                .humanTask(humanTask)
+                .on(new ContextChangeTrigger("."))
+                .build());
         }
 
         return CaseDefinition.builder()
@@ -133,7 +155,8 @@ public class CaseTransitionExecutor implements TransitionExecutor {
             .version(CASE_VERSION)
             .title("Desired State Transition")
             .summary("Automated desired-state transition: " + plan.removals().size()
-                + " removals, " + plan.additions().size() + " additions")
+                + " removals, " + automatedAdditions.size() + " additions, "
+                + humanAdditions.size() + " human tasks")
             .workers(workers)
             .bindings(bindings)
             .build();
@@ -154,7 +177,11 @@ public class CaseTransitionExecutor implements TransitionExecutor {
             outcomes.put(step.node().id(), new StepOutcome.Succeeded());
         }
         for (OrderedStep step : plan.additions()) {
-            outcomes.put(step.node().id(), new StepOutcome.Succeeded());
+            if (step.node().requiresHuman()) {
+                outcomes.put(step.node().id(), new StepOutcome.Skipped("routed to WorkItem"));
+            } else {
+                outcomes.put(step.node().id(), new StepOutcome.Succeeded());
+            }
         }
 
         return new TransitionResult(outcomes);
