@@ -37,7 +37,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `testing/` | `casehub-desiredstate-testing` | `io.casehub.desiredstate.testing` | Mock SPIs and test fixtures. **Test scope only.** |
 | `engine-adapter/` | `casehub-desiredstate-engine` | `io.casehub.desiredstate.engine` | CaseTransitionExecutor — orchestration-tier bridge. Generates cases with Worker(Workflow) phases. |
 | `examples/dungeon/` | `casehub-desiredstate-example-dungeon` | `io.casehub.desiredstate.example.dungeon` | Nefarious Dungeons — teaching example implementing all SPIs with 2D tile visualizer. |
-| `examples/pipeline/` | `casehub-desiredstate-example-pipeline` | `io.casehub.desiredstate.example.pipeline` | Data Pipeline — teaching example with medallion architecture (Bronze/Silver/Gold), schema validation, three-tier fault escalation (retry → AI → human). |
+| `examples/pipeline/` | `casehub-desiredstate-example-pipeline` | `io.casehub.desiredstate.example.pipeline` | Data Pipeline — teaching example with medallion architecture (Bronze/Silver/Gold), schema validation, three-tier fault escalation (retry → AI → human), pluggable `ExecutionBackend` strategy per processing stage. |
 
 ## Core SPIs (api/)
 

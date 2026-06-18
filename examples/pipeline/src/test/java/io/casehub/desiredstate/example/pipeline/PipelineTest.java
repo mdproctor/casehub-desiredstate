@@ -28,7 +28,7 @@ class PipelineTest {
     private PipelineGoalCompiler compiler;
     private TransitionPlanner planner;
     private PipelineWorld world;
-    private PipelineProvisioner provisioner;
+    private NodeProvisioner provisioner;
     private PipelineActualStateAdapter adapter;
 
     @BeforeEach
@@ -37,7 +37,8 @@ class PipelineTest {
         compiler = new PipelineGoalCompiler();
         planner = new TransitionPlanner();
         world = new PipelineWorld();
-        provisioner = new PipelineProvisioner(world, new NoOpAgentProvider());
+        var defaultBackend = new DefaultExecutionBackend(world);
+        provisioner = new PipelineProvisioner(world, new NoOpAgentProvider(), List.of(defaultBackend));
         adapter = new PipelineActualStateAdapter(world);
     }
 
@@ -605,7 +606,7 @@ class PipelineTest {
             }
         };
 
-        PipelineProvisioner agentProvisioner = new PipelineProvisioner(world, resolvingAgent);
+        PipelineProvisioner agentProvisioner = new PipelineProvisioner(world, resolvingAgent, List.of(new DefaultExecutionBackend(world)));
 
         // Create an AI_REVIEW node without pre-setting the outcome
         NodeId targetNode = NodeId.of("ingest");
@@ -640,7 +641,7 @@ class PipelineTest {
             }
         };
 
-        PipelineProvisioner agentProvisioner = new PipelineProvisioner(world, unresolvedAgent);
+        PipelineProvisioner agentProvisioner = new PipelineProvisioner(world, unresolvedAgent, List.of(new DefaultExecutionBackend(world)));
 
         NodeId targetNode = NodeId.of("ingest");
         NodeId reviewNode = NodeId.of("ai-review-ingest");
@@ -658,7 +659,7 @@ class PipelineTest {
 
     @Test
     void aiReview_noOpAgent_registersPending() {
-        PipelineProvisioner noOpProvisioner = new PipelineProvisioner(world, new NoOpAgentProvider());
+        PipelineProvisioner noOpProvisioner = new PipelineProvisioner(world, new NoOpAgentProvider(), List.of(new DefaultExecutionBackend(world)));
 
         NodeId targetNode = NodeId.of("ingest");
         NodeId reviewNode = NodeId.of("ai-review-ingest");
