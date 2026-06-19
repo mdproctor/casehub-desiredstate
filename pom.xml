@@ -96,6 +96,31 @@
                 <version>${version.io.casehub}</version>
             </dependency>
 
+            <!-- Governance — execution policy enforcement (retry, timeout, backoff) -->
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-platform-governance</artifactId>
+                <version>${version.io.casehub}</version>
+            </dependency>
+
+            <!-- Worker — foundation-tier automated task primitives -->
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-worker-api</artifactId>
+                <version>${version.io.casehub}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-worker</artifactId>
+                <version>${version.io.casehub}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-worker-testing</artifactId>
+                <version>${version.io.casehub}</version>
+                <scope>test</scope>
+            </dependency>
+
             <!-- Engine — workflow execution delegation -->
             <dependency>
                 <groupId>io.casehub</groupId>
