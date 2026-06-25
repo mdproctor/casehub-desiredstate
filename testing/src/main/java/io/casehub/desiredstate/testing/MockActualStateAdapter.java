@@ -18,7 +18,7 @@ public class MockActualStateAdapter implements ActualStateAdapter {
     private final ConcurrentHashMap<NodeId, NodeStatus> statuses = new ConcurrentHashMap<>();
 
     @Override
-    public ActualState readActual(DesiredStateGraph desired) {
+    public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
         // Return snapshot of current statuses
         return new ActualState(new HashMap<>(statuses));
     }

@@ -19,7 +19,7 @@ public class PipelineActualStateAdapter implements ActualStateAdapter {
     }
 
     @Override
-    public ActualState readActual(DesiredStateGraph desired) {
+    public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
         Map<NodeId, NodeStatus> statuses = new HashMap<>();
 
         for (Map.Entry<NodeId, DesiredNode> entry : desired.nodes().entrySet()) {

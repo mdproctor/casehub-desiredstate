@@ -58,7 +58,7 @@ public class CaseTransitionExecutor implements TransitionExecutor {
     }
 
     @Override
-    public Uni<TransitionResult> execute(TransitionPlan plan) {
+    public Uni<TransitionResult> execute(TransitionPlan plan, String tenancyId) {
         if (plan.isEmpty()) {
             return Uni.createFrom().item(new TransitionResult(Map.of()));
         }

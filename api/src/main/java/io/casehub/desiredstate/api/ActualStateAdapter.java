@@ -1,5 +1,5 @@
 package io.casehub.desiredstate.api;
 
 public interface ActualStateAdapter {
-    ActualState readActual(DesiredStateGraph desired);
+    ActualState readActual(DesiredStateGraph desired, String tenancyId);
 }

@@ -41,7 +41,7 @@ class SimpleTransitionExecutorTest {
             graph
         );
 
-        TransitionResult result = executor.execute(plan)
+        TransitionResult result = executor.execute(plan, "default")
             .subscribe().withSubscriber(UniAssertSubscriber.create())
             .awaitItem()
             .getItem();
@@ -78,7 +78,7 @@ class SimpleTransitionExecutorTest {
             graph
         );
 
-        TransitionResult result = executor.execute(plan)
+        TransitionResult result = executor.execute(plan, "default")
             .subscribe().withSubscriber(UniAssertSubscriber.create())
             .awaitItem()
             .getItem();
@@ -113,7 +113,7 @@ class SimpleTransitionExecutorTest {
             graph
         );
 
-        TransitionResult result = executor.execute(plan)
+        TransitionResult result = executor.execute(plan, "default")
             .subscribe().withSubscriber(UniAssertSubscriber.create())
             .awaitItem()
             .getItem();
@@ -141,7 +141,7 @@ class SimpleTransitionExecutorTest {
             graph
         );
 
-        TransitionResult result = executor.execute(plan)
+        TransitionResult result = executor.execute(plan, "default")
             .subscribe().withSubscriber(UniAssertSubscriber.create())
             .awaitItem()
             .getItem();

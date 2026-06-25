@@ -21,8 +21,8 @@ class SpiContractTest {
     }
 
     @Test void actualStateAdapter_canBeImplemented() {
-        ActualStateAdapter adapter = desired -> new ActualState(Map.of());
-        assertThat(adapter.readActual(null)).isNotNull();
+        ActualStateAdapter adapter = (desired, tenancyId) -> new ActualState(Map.of());
+        assertThat(adapter.readActual(null, "test-tenant")).isNotNull();
     }
 
     @Test void nodeProvisioner_canBeImplemented() {
@@ -54,8 +54,8 @@ class SpiContractTest {
     }
 
     @Test void transitionExecutor_canBeImplemented() {
-        TransitionExecutor executor = plan -> Uni.createFrom().item(new TransitionResult(Map.of()));
-        assertThat(executor.execute(null).await().indefinitely()).isNotNull();
+        TransitionExecutor executor = (plan, tenancyId) -> Uni.createFrom().item(new TransitionResult(Map.of()));
+        assertThat(executor.execute(null, "test-tenant").await().indefinitely()).isNotNull();
     }
 
     @Test void cyclicDependencyException_carriesCycle() {

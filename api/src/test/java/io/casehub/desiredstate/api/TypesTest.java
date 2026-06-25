@@ -29,9 +29,25 @@ class TypesTest {
         assertThat(((ProvisionResult.Failed) failed).reason()).isEqualTo("timeout");
     }
 
+    @Test void provisionResult_pendingApproval() {
+        var nodeId = new NodeId("db-prod");
+        ProvisionResult pa = new ProvisionResult.PendingApproval(nodeId, "plan-ref-123");
+        assertThat(pa).isInstanceOf(ProvisionResult.PendingApproval.class);
+        assertThat(((ProvisionResult.PendingApproval) pa).nodeId()).isEqualTo(nodeId);
+        assertThat(((ProvisionResult.PendingApproval) pa).planReference()).isEqualTo("plan-ref-123");
+    }
+
     @Test void deprovisionResult_sealed() {
         DeprovisionResult failed = new DeprovisionResult.Failed("locked");
         assertThat(((DeprovisionResult.Failed) failed).reason()).isEqualTo("locked");
+    }
+
+    @Test void deprovisionResult_pendingApproval() {
+        var nodeId = new NodeId("db-prod");
+        DeprovisionResult pa = new DeprovisionResult.PendingApproval(nodeId, "destroy-plan-456");
+        assertThat(pa).isInstanceOf(DeprovisionResult.PendingApproval.class);
+        assertThat(((DeprovisionResult.PendingApproval) pa).nodeId()).isEqualTo(nodeId);
+        assertThat(((DeprovisionResult.PendingApproval) pa).planReference()).isEqualTo("destroy-plan-456");
     }
 
     @Test void stepOutcome_sealed() {

@@ -58,7 +58,7 @@ class DungeonTest {
             "Dark wizard should depend on library");
 
         // Read actual state (all should be ABSENT initially)
-        ActualState actual = adapter.readActual(graph);
+        ActualState actual = adapter.readActual(graph, "default");
         assertEquals(NodeStatus.ABSENT, actual.statusOf(NodeId.of("lair")).orElse(null));
 
         // Plan transitions
@@ -185,7 +185,7 @@ class DungeonTest {
 
         // Compile and provision
         DesiredStateGraph graph = compiler.compile(blueprint, factory);
-        ActualState actual = adapter.readActual(graph);
+        ActualState actual = adapter.readActual(graph, "default");
         TransitionPlan plan = planner.plan(graph, actual);
 
         // Execute provisioning
@@ -221,7 +221,7 @@ class DungeonTest {
         DesiredStateGraph graph = factory.empty();
 
         // Read actual state
-        ActualState actual = adapter.readActual(graph);
+        ActualState actual = adapter.readActual(graph, "default");
 
         // Verify translations
         assertEquals(NodeStatus.PRESENT, actual.statusOf(NodeId.of("lair")).orElse(null));

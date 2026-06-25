@@ -226,7 +226,7 @@ public class ReconciliationLoop {
             try (Scope ignored = reconcileSpan.makeCurrent()) {
                 DesiredStateGraph desired = desiredRef.get();
 
-                ActualState actual = readActual(desired);
+                ActualState actual = readActual(desired, tenancyId);
 
                 desired = detectDrift(desired, actual);
 
@@ -235,7 +235,7 @@ public class ReconciliationLoop {
                     return;
                 }
 
-                TransitionResult result = execute(plan);
+                TransitionResult result = execute(plan, tenancyId);
 
                 faultFeedback(desired, plan, result);
             } catch (Exception e) {
@@ -248,10 +248,10 @@ public class ReconciliationLoop {
             }
         }
 
-        private ActualState readActual(DesiredStateGraph desired) {
+        private ActualState readActual(DesiredStateGraph desired, String tenancyId) {
             Span span = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME).spanBuilder("readActual").startSpan();
             try (Scope ignored = span.makeCurrent()) {
-                ActualState actual = actualStateAdapter.readActual(desired);
+                ActualState actual = actualStateAdapter.readActual(desired, tenancyId);
                 span.setAttribute(AttributeKey.longKey("desiredstate.node.count"),
                         actual.statuses().size());
                 return actual;
@@ -307,10 +307,10 @@ public class ReconciliationLoop {
             }
         }
 
-        private TransitionResult execute(TransitionPlan plan) {
+        private TransitionResult execute(TransitionPlan plan, String tenancyId) {
             Span span = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME).spanBuilder("execute").startSpan();
             try (Scope ignored = span.makeCurrent()) {
-                return executor.execute(plan).await().indefinitely();
+                return executor.execute(plan, tenancyId).await().indefinitely();
             } finally {
                 span.end();
             }

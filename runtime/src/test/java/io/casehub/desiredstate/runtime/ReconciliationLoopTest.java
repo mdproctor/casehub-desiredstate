@@ -341,7 +341,7 @@ class ReconciliationLoopTest {
         }
 
         @Override
-        public ActualState readActual(DesiredStateGraph desired) {
+        public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
             return new ActualState(statuses);
         }
     }
@@ -356,7 +356,7 @@ class ReconciliationLoopTest {
         final Set<NodeId> failDeprovisionNodes = ConcurrentHashMap.newKeySet();
 
         @Override
-        public Uni<TransitionResult> execute(TransitionPlan plan) {
+        public Uni<TransitionResult> execute(TransitionPlan plan, String tenancyId) {
             return Uni.createFrom().item(() -> {
                 executedPlans.add(plan);
 
