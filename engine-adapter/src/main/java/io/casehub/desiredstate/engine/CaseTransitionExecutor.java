@@ -2,11 +2,12 @@ package io.casehub.desiredstate.engine;
 
 import io.casehub.api.engine.CaseHubRuntime;
 import io.casehub.api.model.Binding;
-import io.casehub.api.model.Capability;
 import io.casehub.api.model.CaseDefinition;
 import io.casehub.api.model.ContextChangeTrigger;
+import io.casehub.engine.flow.FlowWorkerFunction;
 import io.casehub.api.model.HumanTaskTarget;
-import io.casehub.api.model.Worker;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.OrderedStep;
 import io.casehub.desiredstate.api.StepOutcome;
@@ -101,7 +102,7 @@ public class CaseTransitionExecutor implements TransitionExecutor {
             Worker pruneWorker = Worker.builder()
                 .name("prune")
                 .capabilities(dispatchCapability)
-                .function(pruneWorkflow)
+                .function(new FlowWorkerFunction(pruneWorkflow))
                 .description("Removes nodes no longer in the desired state (leaves before roots)")
                 .build();
 
@@ -127,7 +128,7 @@ public class CaseTransitionExecutor implements TransitionExecutor {
             Worker growWorker = Worker.builder()
                 .name("grow")
                 .capabilities(dispatchCapability)
-                .function(growWorkflow)
+                .function(new FlowWorkerFunction(growWorkflow))
                 .description("Provisions new nodes in the desired state (roots before leaves)")
                 .build();
 
