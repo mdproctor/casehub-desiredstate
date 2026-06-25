@@ -73,6 +73,12 @@ public class DesiredStateWorkerFunction {
                 "status", "FAILED",
                 "reason", f.reason()
             );
+            case ProvisionResult.PendingApproval pa -> Map.of(
+                "nodeId", nodeId.value(),
+                "action", "PROVISION",
+                "status", "PENDING_APPROVAL",
+                "planReference", pa.planReference()
+            );
         };
     }
 
@@ -91,6 +97,12 @@ public class DesiredStateWorkerFunction {
                 "action", "DEPROVISION",
                 "status", "FAILED",
                 "reason", f.reason()
+            );
+            case DeprovisionResult.PendingApproval pa -> Map.of(
+                "nodeId", nodeId.value(),
+                "action", "DEPROVISION",
+                "status", "PENDING_APPROVAL",
+                "planReference", pa.planReference()
             );
         };
     }

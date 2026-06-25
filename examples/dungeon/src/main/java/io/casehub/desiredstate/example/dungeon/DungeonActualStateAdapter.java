@@ -17,7 +17,7 @@ public class DungeonActualStateAdapter implements ActualStateAdapter {
     }
 
     @Override
-    public ActualState readActual(DesiredStateGraph desired) {
+    public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
         Map<NodeId, NodeStatus> statuses = new HashMap<>();
 
         // Read room states

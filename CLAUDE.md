@@ -45,13 +45,13 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | SPI | Signature | Domain responsibility |
 |-----|-----------|----------------------|
 | `GoalCompiler<G>` | `compile(G goals, DesiredStateGraphFactory) → DesiredStateGraph` | Translate goal declaration into node graph |
-| `ActualStateAdapter` | `readActual(DesiredStateGraph) → ActualState` | Read current reality from domain sources |
+| `ActualStateAdapter` | `readActual(DesiredStateGraph, String tenancyId) → ActualState` | Read current reality from domain sources |
 | `NodeProvisioner` | `provision(DesiredNode, ProvisionContext) → ProvisionResult` | Create/update a single node |
 | `NodeProvisioner` | `deprovision(DesiredNode, DeprovisionContext) → DeprovisionResult` | Remove a single node |
 | `ReactiveNodeProvisioner` | `provision/deprovision → Uni<Result>` | Reactive variant of NodeProvisioner |
 | `FaultPolicy` | `onFault(FaultEvent, DesiredStateGraph) → List<GraphMutation>` | Mutate graph in response to fault |
 | `EventSource` | `stream() → Multi<StateEvent>` | Stream actual-state events into reconciliation loop |
-| `TransitionExecutor` | `execute(TransitionPlan) → Uni<TransitionResult>` | Execute a transition plan (SPI'd — simple or case-backed) |
+| `TransitionExecutor` | `execute(TransitionPlan, String tenancyId) → Uni<TransitionResult>` | Execute a transition plan (SPI'd — simple or case-backed) |
 | `DesiredStateGraph` | query + mutation methods | SPI interface — graph backing store is pluggable |
 | `DesiredStateGraphFactory` | `empty()`, `of(nodes, deps)` | Creates graph instances |
 
@@ -69,7 +69,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `FaultEvent` | Node + `FaultType` + detail |
 | `GraphMutation` | Sealed interface — AddNode, RemoveNode, UpdateNode, AddDependency, RemoveDependency |
 | `ProvisionContext` | `tenancyId` + `DesiredStateGraph` |
-| `ProvisionResult`, `DeprovisionResult` | Sealed — Success / Failed(reason) |
+| `ProvisionResult`, `DeprovisionResult` | Sealed — Success / Failed(reason) / PendingApproval(nodeId, planReference) |
 | `StepOutcome` | Sealed — Succeeded / Failed(reason) / Skipped(reason) |
 
 ## Ordering Rule — Pruning Before Growing

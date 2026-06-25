@@ -34,6 +34,10 @@
             <artifactId>casehub-platform-agent-api</artifactId>
         </dependency>
         <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-desiredstate-engine</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>
         </dependency>

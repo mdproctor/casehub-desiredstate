@@ -154,7 +154,7 @@ class CaseTransitionExecutorTest {
                 graph, graph
         );
 
-        TransitionResult result = executor.execute(plan)
+        TransitionResult result = executor.execute(plan, "default")
                 .await().indefinitely();
 
         assertThat(result.outcomes().get(NodeId.of("human-review-app")))

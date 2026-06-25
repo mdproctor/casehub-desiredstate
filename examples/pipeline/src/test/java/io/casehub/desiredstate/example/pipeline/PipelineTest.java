@@ -175,7 +175,7 @@ class PipelineTest {
 
         // Execute all additions via SimpleTransitionExecutor
         SimpleTransitionExecutor executor = new SimpleTransitionExecutor(provisioner);
-        TransitionResult result = executor.execute(plan).await().indefinitely();
+        TransitionResult result = executor.execute(plan, "default").await().indefinitely();
 
         // All 8 nodes should succeed
         assertThat(result.outcomes()).hasSize(8);
@@ -197,7 +197,7 @@ class PipelineTest {
         assertThat(world.hasSchema("click-schema")).isTrue();
 
         // Read actual state and verify all nodes report PRESENT
-        ActualState actual = adapter.readActual(graph);
+        ActualState actual = adapter.readActual(graph, "default");
         assertThat(actual.statuses()).hasSize(8);
         actual.statuses().forEach((id, status) ->
             assertThat(status)
@@ -233,7 +233,7 @@ class PipelineTest {
         SimpleTransitionExecutor executor = new SimpleTransitionExecutor(provisioner);
         ActualState empty = new ActualState(Map.of());
         TransitionPlan plan = planner.plan(graph, empty);
-        executor.execute(plan).await().indefinitely();
+        executor.execute(plan, "default").await().indefinitely();
 
         // All stages should be RUNNING before deprovision
         assertThat(world.stageState(NodeId.of("click-clean"))).isEqualTo(PipelineWorld.StageState.RUNNING);
@@ -400,7 +400,7 @@ class PipelineTest {
         world.registerLookupSource("geo-lookup", new PipelineWorld.LookupSourceEntry("geo-lookup"));
 
         // Phase 1: All ABSENT → provision all
-        ActualState actual = adapter.readActual(graph);
+        ActualState actual = adapter.readActual(graph, "default");
         TransitionPlan plan = planner.plan(graph, actual);
         assertThat(plan.additions()).hasSize(8);
         for (OrderedStep step : plan.additions()) {
@@ -409,13 +409,13 @@ class PipelineTest {
         }
 
         // Phase 2: All PRESENT → empty plan (reconciled)
-        actual = adapter.readActual(graph);
+        actual = adapter.readActual(graph, "default");
         plan = planner.plan(graph, actual);
         assertThat(plan.isEmpty()).isTrue();
 
         // Phase 3: Fail ingestion → re-provision
         world.failStage(NodeId.of("click-ingest"), "Connection lost");
-        actual = adapter.readActual(graph);
+        actual = adapter.readActual(graph, "default");
         assertThat(actual.statusOf(NodeId.of("click-ingest"))).hasValue(NodeStatus.ABSENT);
         plan = planner.plan(graph, actual);
         assertThat(plan.isEmpty()).isFalse();
@@ -428,7 +428,7 @@ class PipelineTest {
         }
 
         // Phase 4: All PRESENT again after recovery
-        actual = adapter.readActual(graph);
+        actual = adapter.readActual(graph, "default");
         for (NodeId nodeId : graph.nodes().keySet()) {
             assertThat(actual.statusOf(nodeId))
                 .as("%s should be PRESENT after recovery", nodeId.value())

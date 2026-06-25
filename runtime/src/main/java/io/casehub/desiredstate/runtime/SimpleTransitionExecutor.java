@@ -22,7 +22,6 @@ import java.util.Map;
 @ApplicationScoped
 public class SimpleTransitionExecutor implements TransitionExecutor {
 
-    private static final String DEFAULT_TENANCY = "default";
     private static final String INSTRUMENTATION_NAME = "io.casehub.desiredstate";
 
     private final NodeProvisioner provisioner;
@@ -32,19 +31,19 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
     }
 
     @Override
-    public Uni<TransitionResult> execute(TransitionPlan plan) {
+    public Uni<TransitionResult> execute(TransitionPlan plan, String tenancyId) {
         return Uni.createFrom().item(() -> {
             Map<NodeId, StepOutcome> outcomes = new LinkedHashMap<>();
 
             // Execute removals first
             for (OrderedStep step : plan.removals()) {
-                StepOutcome outcome = executeDeprovision(step.node(), plan.before());
+                StepOutcome outcome = executeDeprovision(step.node(), plan.before(), tenancyId);
                 outcomes.put(step.node().id(), outcome);
             }
 
             // Then execute additions
             for (OrderedStep step : plan.additions()) {
-                StepOutcome outcome = executeProvision(step.node(), plan.after());
+                StepOutcome outcome = executeProvision(step.node(), plan.after(), tenancyId);
                 outcomes.put(step.node().id(), outcome);
             }
 
@@ -52,7 +51,7 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
         });
     }
 
-    private StepOutcome executeProvision(DesiredNode node, DesiredStateGraph graph) {
+    private StepOutcome executeProvision(DesiredNode node, DesiredStateGraph graph, String tenancyId) {
         Span span = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME).spanBuilder("provision")
                 .setAttribute(AttributeKey.stringKey("desiredstate.node.id"), node.id().value())
                 .setAttribute(AttributeKey.stringKey("desiredstate.node.type"), node.type().value())
@@ -63,7 +62,7 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
                 return new StepOutcome.Skipped("requires human");
             }
 
-            ProvisionContext context = new ProvisionContext(DEFAULT_TENANCY, graph);
+            ProvisionContext context = new ProvisionContext(tenancyId, graph);
             ProvisionResult result = provisioner.provision(node, context);
 
             return switch (result) {
@@ -72,19 +71,21 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
                     span.setStatus(StatusCode.ERROR, f.reason());
                     yield new StepOutcome.Failed(f.reason());
                 }
+                case ProvisionResult.PendingApproval pa ->
+                    new StepOutcome.Skipped("pending approval: " + pa.planReference());
             };
         } finally {
             span.end();
         }
     }
 
-    private StepOutcome executeDeprovision(DesiredNode node, DesiredStateGraph graph) {
+    private StepOutcome executeDeprovision(DesiredNode node, DesiredStateGraph graph, String tenancyId) {
         Span span = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME).spanBuilder("deprovision")
                 .setAttribute(AttributeKey.stringKey("desiredstate.node.id"), node.id().value())
                 .setAttribute(AttributeKey.stringKey("desiredstate.node.type"), node.type().value())
                 .startSpan();
         try (Scope scope = span.makeCurrent()) {
-            DeprovisionContext context = new DeprovisionContext(DEFAULT_TENANCY, graph);
+            DeprovisionContext context = new DeprovisionContext(tenancyId, graph);
             DeprovisionResult result = provisioner.deprovision(node, context);
 
             return switch (result) {
@@ -93,6 +94,8 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
                     span.setStatus(StatusCode.ERROR, f.reason());
                     yield new StepOutcome.Failed(f.reason());
                 }
+                case DeprovisionResult.PendingApproval pa ->
+                    new StepOutcome.Skipped("pending approval: " + pa.planReference());
             };
         } finally {
             span.end();
