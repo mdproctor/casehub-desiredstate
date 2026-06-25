@@ -24,41 +24,41 @@ public class TransitionPlanner {
      */
     public TransitionPlan plan(DesiredStateGraph desired, ActualState actual) {
         List<OrderedStep> removals = new ArrayList<>();
-        List<OrderedStep> additions = new ArrayList<>();
 
-        // Find removals: nodes PRESENT in actual but not in desired
+        // Orphan detection: nodes in actual but not in desired
         for (Map.Entry<NodeId, NodeStatus> entry : actual.statuses().entrySet()) {
             NodeId nodeId = entry.getKey();
-            NodeStatus status = entry.getValue();
-
-            if (status == NodeStatus.PRESENT && !desired.nodes().containsKey(nodeId)) {
-                // Orphaned node — create dummy DesiredNode with UnknownSpec for removal
-                DesiredNode dummyNode = new DesiredNode(
-                    nodeId,
-                    NodeType.of("unknown"),
-                    new UnknownSpec(),
-                    false
-                );
-                removals.add(new OrderedStep(dummyNode, StepAction.DEPROVISION));
+            if (!desired.nodes().containsKey(nodeId)) {
+                boolean remove = switch (entry.getValue()) {
+                    case PRESENT, DRIFTED -> true;
+                    case ABSENT, UNKNOWN  -> false;
+                };
+                if (remove) {
+                    removals.add(new OrderedStep(
+                        new DesiredNode(nodeId, NodeType.of("unknown"), new UnknownSpec(), false),
+                        StepAction.DEPROVISION));
+                }
             }
         }
 
-        // Find additions: nodes in desired that are ABSENT or UNKNOWN in actual
+        // Desired node classification: what needs provisioning
         Set<NodeId> toAdd = new HashSet<>();
         for (Map.Entry<NodeId, DesiredNode> entry : desired.nodes().entrySet()) {
-            NodeId nodeId = entry.getKey();
-            NodeStatus status = actual.statuses().getOrDefault(nodeId, NodeStatus.UNKNOWN);
-
-            if (status == NodeStatus.ABSENT || status == NodeStatus.UNKNOWN) {
-                toAdd.add(nodeId);
+            NodeStatus status = actual.statuses().getOrDefault(entry.getKey(), NodeStatus.UNKNOWN);
+            boolean provision = switch (status) {
+                case ABSENT, UNKNOWN, DRIFTED -> true;
+                case PRESENT                  -> false;
+            };
+            if (provision) {
+                toAdd.add(entry.getKey());
             }
         }
 
         // Topologically sort additions: roots-first (Kahn's algorithm)
         List<NodeId> sorted = topologicalSort(desired, toAdd);
+        List<OrderedStep> additions = new ArrayList<>();
         for (NodeId nodeId : sorted) {
-            DesiredNode node = desired.nodes().get(nodeId);
-            additions.add(new OrderedStep(node, StepAction.PROVISION));
+            additions.add(new OrderedStep(desired.nodes().get(nodeId), StepAction.PROVISION));
         }
 
         return new TransitionPlan(removals, additions, desired, desired);
