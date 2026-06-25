@@ -247,8 +247,9 @@ class ReconciliationLoopTest {
     }
 
     @Test
-    void driftDetection_runsBeforeEmptyPlanCheck() {
-        // Desired: one node "a". Actual: "a" is DRIFTED (present but drifted — plan is empty).
+    void driftDetection_addsFaultPolicyNodesAlongsideReprovision() {
+        // Desired: node "a". Actual: "a" is DRIFTED.
+        // After fix: "a" is re-provisioned AND fault-policy-injected "a-fix" is provisioned.
         DesiredNode nodeA = node("a");
         DesiredStateGraph desired = factory.of(List.of(nodeA), List.of());
 
@@ -267,18 +268,19 @@ class ReconciliationLoopTest {
             planner, testExecutor, actualAdapter, faultEngine, testEventSource,
             TEST_DEBOUNCE, TEST_RESYNC);
 
-        // Actual: "a" is DRIFTED (not ABSENT, so node "a" won't be planned for addition),
-        // but "a-fix" is UNKNOWN (will be planned for addition after mutation).
+        // "a" is DRIFTED — planner will re-provision "a" and provision "a-fix" (UNKNOWN → addition)
         actualAdapter.setStatuses(Map.of(NodeId.of("a"), NodeStatus.DRIFTED));
 
         loop.start("test-tenant", desired);
 
-        // Wait for an executed plan that contains "a-fix" — proves drift detection
-        // ran before the empty-plan check and added the fix node via fault policy
+        // Both "a" (re-provisioned) and "a-fix" (fault-policy-injected) appear in additions
         await().atMost(Duration.ofSeconds(2)).until(() ->
-            testExecutor.executedPlans.stream().anyMatch(plan ->
-                plan.additions().stream().anyMatch(step ->
-                    step.node().id().equals(NodeId.of("a-fix")))));
+            testExecutor.executedPlans.stream().anyMatch(plan -> {
+                var addedIds = plan.additions().stream()
+                    .map(step -> step.node().id())
+                    .toList();
+                return addedIds.contains(NodeId.of("a")) && addedIds.contains(NodeId.of("a-fix"));
+            }));
     }
 
     @Test
