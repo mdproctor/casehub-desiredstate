@@ -16,7 +16,7 @@ import java.util.Map;
 /**
  * Simple sequential transition executor.
  * Executes removals first, then additions, calling the NodeProvisioner for each step.
- * Skips human nodes with a StepOutcome.Skipped result.
+ * Delegates requiresHuman nodes to the HumanNodeHandler.
  */
 @DefaultBean
 @ApplicationScoped
@@ -25,9 +25,11 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
     private static final String INSTRUMENTATION_NAME = "io.casehub.desiredstate";
 
     private final NodeProvisioner provisioner;
+    private final HumanNodeHandler humanNodeHandler;
 
-    public SimpleTransitionExecutor(NodeProvisioner provisioner) {
+    public SimpleTransitionExecutor(NodeProvisioner provisioner, HumanNodeHandler humanNodeHandler) {
         this.provisioner = provisioner;
+        this.humanNodeHandler = humanNodeHandler;
     }
 
     @Override
@@ -58,11 +60,11 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
                 .setAttribute(AttributeKey.booleanKey("desiredstate.requires.human"), node.requiresHuman())
                 .startSpan();
         try (Scope scope = span.makeCurrent()) {
+            ProvisionContext context = new ProvisionContext(tenancyId, graph);
             if (node.requiresHuman()) {
-                return new StepOutcome.Skipped("requires human");
+                return humanNodeHandler.onProvision(node, context);
             }
 
-            ProvisionContext context = new ProvisionContext(tenancyId, graph);
             ProvisionResult result = provisioner.provision(node, context);
 
             return switch (result) {

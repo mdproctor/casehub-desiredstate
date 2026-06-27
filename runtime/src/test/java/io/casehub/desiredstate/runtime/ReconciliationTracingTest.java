@@ -127,7 +127,7 @@ class ReconciliationTracingTest {
         actualAdapter.setStatuses(Map.of());
 
         SimpleTransitionExecutor simpleExecutor = new SimpleTransitionExecutor(
-                new SucceedingProvisioner());
+                new SucceedingProvisioner(), new NoOpHumanNodeHandler());
         ReconciliationLoop loopWithSimple = new ReconciliationLoop(
                 planner, simpleExecutor, actualAdapter, faultEngine, testEventSource,
                 TEST_DEBOUNCE, TEST_RESYNC);
@@ -161,7 +161,7 @@ class ReconciliationTracingTest {
         actualAdapter.setStatuses(Map.of());
 
         SimpleTransitionExecutor simpleExecutor = new SimpleTransitionExecutor(
-                new FailingProvisioner());
+                new FailingProvisioner(), new NoOpHumanNodeHandler());
         ReconciliationLoop loopWithSimple = new ReconciliationLoop(
                 planner, simpleExecutor, actualAdapter, faultEngine, testEventSource,
                 TEST_DEBOUNCE, TEST_RESYNC);
@@ -190,7 +190,7 @@ class ReconciliationTracingTest {
                 NodeId.of("orphan"), NodeStatus.PRESENT));
 
         SimpleTransitionExecutor simpleExecutor = new SimpleTransitionExecutor(
-                new SucceedingProvisioner());
+                new SucceedingProvisioner(), new NoOpHumanNodeHandler());
         ReconciliationLoop loopWithSimple = new ReconciliationLoop(
                 planner, simpleExecutor, actualAdapter, faultEngine, testEventSource,
                 TEST_DEBOUNCE, TEST_RESYNC);

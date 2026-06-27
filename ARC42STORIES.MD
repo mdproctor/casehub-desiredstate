@@ -135,7 +135,7 @@ C4Container
 
   Container_Boundary(b1, "Layer: L1 Core API") {
     Container(api_graph, "DesiredStateGraph", "Java SPI", "Immutable graph with algebraic composition")
-    Container(api_spis, "GoalCompiler / NodeProvisioner / FaultPolicy / EventSource", "Java SPI", "Domain extension points")
+    Container(api_spis, "GoalCompiler / NodeProvisioner / FaultPolicy / EventSource / HumanNodeHandler", "Java SPI", "Domain extension points")
     Container(api_exec, "TransitionExecutor", "Java SPI", "Pluggable plan execution")
   }
 
@@ -143,7 +143,7 @@ C4Container
     Container(planner, "TransitionPlanner", "Quarkus CDI", "Diffs desired vs actual, orders transitions")
     Container(loop, "ReconciliationLoop", "Quarkus CDI", "Event-driven + periodic re-sync per tenant")
     Container(fault, "FaultPolicyEngine", "Quarkus CDI", "Multi-policy composition with conflict detection")
-    Container(simple, "SimpleTransitionExecutor", "@DefaultBean", "Sequential executor, skips human nodes")
+    Container(simple, "SimpleTransitionExecutor", "@DefaultBean", "Sequential executor, delegates human nodes to HumanNodeHandler")
   }
 
   Container_Boundary(b3, "Layer: L3 Engine Adapter") {
@@ -165,6 +165,7 @@ C4Container
 | runtime/ | casehub-desiredstate | io.casehub.desiredstate.runtime |
 | testing/ | casehub-desiredstate-testing | io.casehub.desiredstate.testing |
 | engine-adapter/ | casehub-desiredstate-engine | io.casehub.desiredstate.engine |
+| work-adapter/ | casehub-desiredstate-work | io.casehub.desiredstate.work |
 | examples/dungeon/ | casehub-desiredstate-example-dungeon | io.casehub.desiredstate.example.dungeon |
 | examples/pipeline/ | casehub-desiredstate-example-pipeline | io.casehub.desiredstate.example.pipeline |
 
@@ -541,7 +542,7 @@ What this layer adds:
 - **TransitionPlanner** — diffs desired graph against actual state, produces pruning-first ordered steps; topological sort via Kahn's algorithm
 - **ReconciliationLoop** — per-tenant, dual-trigger (events debounced at 1s + periodic at 5m), state machine (IDLE→DIFFING→PLANNING→EXECUTING→RECONCILED/FAULTED)
 - **FaultPolicyEngine** — discovers all `FaultPolicy` beans via CDI `Instance<FaultPolicy>`, runs all matching, merges mutations, detects conflicts (`ConflictingMutationException`)
-- **SimpleTransitionExecutor** — `@DefaultBean`, walks removals then additions sequentially, skips `requiresHuman` nodes
+- **SimpleTransitionExecutor** — `@DefaultBean`, walks removals then additions sequentially, delegates `requiresHuman` nodes to `HumanNodeHandler` SPI
 
 Not closed here: L3 (no case-backed execution), L4 (no tracing until C3).
 
@@ -592,7 +593,7 @@ Event-driven reconciliation loop with progressive fault mutation accumulation.
 3. Add drift detection before planning — scan actual state for degraded entries and create fault events
 4. Create a fault policy engine that discovers all fault policies via DI, runs all matching, and merges mutations with conflict detection
 5. Accumulate fault mutations progressively on a local copy, then apply a single CAS update
-6. Create a default sequential executor as a `@DefaultBean` — walk removals then additions, skip human-flagged nodes
+6. Create a default sequential executor as a `@DefaultBean` — walk removals then additions, delegate human-flagged nodes to `HumanNodeHandler` SPI
 7. Make the loop per-tenant for isolation
 
 ---
