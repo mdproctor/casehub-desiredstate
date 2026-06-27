@@ -20,7 +20,7 @@ class SimpleTransitionExecutorTest {
     void setUp() {
         factory = new DefaultDesiredStateGraphFactory();
         mockProvisioner = new MockNodeProvisioner();
-        executor = new SimpleTransitionExecutor(mockProvisioner);
+        executor = new SimpleTransitionExecutor(mockProvisioner, new NoOpHumanNodeHandler());
     }
 
     @Test
@@ -58,7 +58,7 @@ class SimpleTransitionExecutorTest {
     }
 
     @Test
-    void skipsHumanNodes() {
+    void skipsHumanNodesWithNoOpHandler() {
         DesiredNode humanNode = new DesiredNode(
             NodeId.of("h1"), NodeType.of("test"), new TestSpec("human"), true
         );
@@ -83,14 +83,13 @@ class SimpleTransitionExecutorTest {
             .awaitItem()
             .getItem();
 
-        // Human node skipped, normal node provisioned
         StepOutcome humanOutcome = result.outcomes().get(NodeId.of("h1"));
         assertTrue(humanOutcome instanceof StepOutcome.Skipped);
-        assertEquals("requires human", ((StepOutcome.Skipped) humanOutcome).reason());
+        assertEquals("requires human — no HumanNodeHandler configured",
+            ((StepOutcome.Skipped) humanOutcome).reason());
 
         assertTrue(result.outcomes().get(NodeId.of("n1")) instanceof StepOutcome.Succeeded);
 
-        // Only normal node provisioned
         assertEquals(1, mockProvisioner.callOrder.size());
         assertEquals("provision:n1", mockProvisioner.callOrder.get(0));
     }
@@ -149,6 +148,82 @@ class SimpleTransitionExecutorTest {
         StepOutcome outcome = result.outcomes().get(NodeId.of("failing"));
         assertTrue(outcome instanceof StepOutcome.Failed);
         assertEquals("mock failure", ((StepOutcome.Failed) outcome).reason());
+    }
+
+    @Test
+    void delegatesHumanNodesToHandler() {
+        HumanNodeHandler handler = (node, context) ->
+            new StepOutcome.Skipped("test handler: " + node.id().value());
+
+        SimpleTransitionExecutor handlerExecutor =
+            new SimpleTransitionExecutor(mockProvisioner, handler);
+
+        DesiredNode humanNode = new DesiredNode(
+            NodeId.of("h1"), NodeType.of("test"), new TestSpec("human"), true
+        );
+        DesiredNode normalNode = new DesiredNode(
+            NodeId.of("n1"), NodeType.of("test"), new TestSpec("normal"), false
+        );
+
+        DesiredStateGraph graph = factory.of(List.of(humanNode, normalNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+            List.of(),
+            List.of(
+                new OrderedStep(humanNode, StepAction.PROVISION),
+                new OrderedStep(normalNode, StepAction.PROVISION)
+            ),
+            graph, graph
+        );
+
+        TransitionResult result = handlerExecutor.execute(plan, "tenant1")
+            .subscribe().withSubscriber(UniAssertSubscriber.create())
+            .awaitItem()
+            .getItem();
+
+        StepOutcome humanOutcome = result.outcomes().get(NodeId.of("h1"));
+        assertInstanceOf(StepOutcome.Skipped.class, humanOutcome);
+        assertEquals("test handler: h1", ((StepOutcome.Skipped) humanOutcome).reason());
+
+        assertTrue(result.outcomes().get(NodeId.of("n1")) instanceof StepOutcome.Succeeded);
+
+        assertEquals(1, mockProvisioner.callOrder.size());
+        assertEquals("provision:n1", mockProvisioner.callOrder.get(0));
+    }
+
+    @Test
+    void handlerReceivesCorrectProvisionContext() {
+        String[] capturedTenancyId = {null};
+        DesiredStateGraph[] capturedGraph = {null};
+
+        HumanNodeHandler capturingHandler = (node, context) -> {
+            capturedTenancyId[0] = context.tenancyId();
+            capturedGraph[0] = context.graph();
+            return new StepOutcome.Skipped("captured");
+        };
+
+        SimpleTransitionExecutor capturingExecutor =
+            new SimpleTransitionExecutor(mockProvisioner, capturingHandler);
+
+        DesiredNode humanNode = new DesiredNode(
+            NodeId.of("h1"), NodeType.of("test"), new TestSpec("human"), true
+        );
+
+        DesiredStateGraph graph = factory.of(List.of(humanNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+            List.of(),
+            List.of(new OrderedStep(humanNode, StepAction.PROVISION)),
+            graph, graph
+        );
+
+        capturingExecutor.execute(plan, "my-tenant")
+            .subscribe().withSubscriber(UniAssertSubscriber.create())
+            .awaitItem();
+
+        assertEquals("my-tenant", capturedTenancyId[0]);
+        assertNotNull(capturedGraph[0]);
+        assertTrue(capturedGraph[0].nodes().containsKey(NodeId.of("h1")));
     }
 
     // Helper test spec

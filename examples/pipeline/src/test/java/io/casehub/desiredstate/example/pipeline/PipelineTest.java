@@ -2,6 +2,7 @@ package io.casehub.desiredstate.example.pipeline;
 
 import io.casehub.desiredstate.api.*;
 import io.casehub.desiredstate.runtime.DefaultDesiredStateGraphFactory;
+import io.casehub.desiredstate.runtime.NoOpHumanNodeHandler;
 import io.casehub.desiredstate.runtime.SimpleTransitionExecutor;
 import io.casehub.desiredstate.runtime.TransitionPlanner;
 import io.casehub.platform.agent.*;
@@ -174,7 +175,7 @@ class PipelineTest {
         world.registerLookupSource("geo-lookup", new PipelineWorld.LookupSourceEntry("geo-lookup"));
 
         // Execute all additions via SimpleTransitionExecutor
-        SimpleTransitionExecutor executor = new SimpleTransitionExecutor(provisioner);
+        SimpleTransitionExecutor executor = new SimpleTransitionExecutor(provisioner, new NoOpHumanNodeHandler());
         TransitionResult result = executor.execute(plan, "default").await().indefinitely();
 
         // All 8 nodes should succeed
@@ -230,7 +231,7 @@ class PipelineTest {
 
         // Provision the full pipeline first
         world.registerLookupSource("geo-lookup", new PipelineWorld.LookupSourceEntry("geo-lookup"));
-        SimpleTransitionExecutor executor = new SimpleTransitionExecutor(provisioner);
+        SimpleTransitionExecutor executor = new SimpleTransitionExecutor(provisioner, new NoOpHumanNodeHandler());
         ActualState empty = new ActualState(Map.of());
         TransitionPlan plan = planner.plan(graph, empty);
         executor.execute(plan, "default").await().indefinitely();

@@ -37,6 +37,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `runtime/` | `casehub-desiredstate` | `io.casehub.desiredstate.runtime` | TransitionPlanner, ReconciliationLoop, FaultPolicyEngine, ImmutableDesiredStateGraph, SimpleTransitionExecutor. Quarkus library. |
 | `testing/` | `casehub-desiredstate-testing` | `io.casehub.desiredstate.testing` | Mock SPIs and test fixtures. **Test scope only.** |
 | `engine-adapter/` | `casehub-desiredstate-engine` | `io.casehub.desiredstate.engine` | CaseTransitionExecutor — orchestration-tier bridge. Generates cases with Worker(Workflow) phases. |
+| `work-adapter/` | `casehub-desiredstate-work` | `io.casehub.desiredstate.work` | WorkItem-backed HumanNodeHandler — creates WorkItems for requiresHuman nodes via WorkItemCreator SPI. |
 | `examples/dungeon/` | `casehub-desiredstate-example-dungeon` | `io.casehub.desiredstate.example.dungeon` | Nefarious Dungeons — teaching example implementing all SPIs with 2D tile visualizer. |
 | `examples/pipeline/` | `casehub-desiredstate-example-pipeline` | `io.casehub.desiredstate.example.pipeline` | Data Pipeline — teaching example with medallion architecture (Bronze/Silver/Gold), schema validation, three-tier fault escalation (retry → AI → human), pluggable `ExecutionBackend` strategy per processing stage. |
 
@@ -52,6 +53,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `FaultPolicy` | `onFault(FaultEvent, DesiredStateGraph) → List<GraphMutation>` | Mutate graph in response to fault |
 | `EventSource` | `stream() → Multi<StateEvent>` | Stream actual-state events into reconciliation loop |
 | `TransitionExecutor` | `execute(TransitionPlan, String tenancyId) → Uni<TransitionResult>` | Execute a transition plan (SPI'd — simple or case-backed) |
+| `HumanNodeHandler` | `onProvision(DesiredNode, ProvisionContext) → StepOutcome` | Handle requiresHuman nodes during provision |
 | `DesiredStateGraph` | query + mutation methods | SPI interface — graph backing store is pluggable |
 | `DesiredStateGraphFactory` | `empty()`, `of(nodes, deps)` | Creates graph instances |
 
@@ -83,7 +85,9 @@ This ensures no dangling dependencies and no half-removed states.
 
 ## Human Nodes
 
-`DesiredNode.requiresHuman = true` → `SimpleTransitionExecutor` skips the node (StepOutcome.Skipped).
+`DesiredNode.requiresHuman = true` → `SimpleTransitionExecutor` delegates to `HumanNodeHandler` SPI.
+`NoOpHumanNodeHandler` (`@DefaultBean`) skips the node. `WorkItemHumanNodeHandler` (work-adapter,
+classpath-activated) creates a WorkItem via `WorkItemCreator` SPI for human provisioning.
 `CaseTransitionExecutor` (engine-adapter) generates a `humanTask` binding in the case definition —
 the engine's HITL infrastructure handles WorkItem creation and completion. The reconciliation loop
 detects human node completion on the next cycle via ActualStateAdapter.
