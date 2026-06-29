@@ -182,6 +182,8 @@ public class NoOpPendingApprovalHandler implements PendingApprovalHandler {
 
 Modified `executeProvision()` flow:
 
+**Design invariant:** `requiresHuman` takes precedence — `PendingApprovalHandler` is only invoked for automated nodes. A `requiresHuman` node delegates to `HumanNodeHandler`, which replaces the provisioner entirely. Since PendingApprovalHandler wraps the provisioner, there is no provisioner to wrap when `requiresHuman=true`.
+
 1. If `node.requiresHuman()` → delegate to `humanNodeHandler` (unchanged)
 2. `check = pendingApprovalHandler.check(node, PROVISION, tenancyId)`
 3. Switch on check result:
@@ -212,12 +214,18 @@ Pattern-matches two outcome types:
 **check() logic:**
 1. `findActiveByCallerRef(callerRef)` → if active WorkItem exists → return `Pending`
 2. `findByCallerRef(callerRef)` → if terminal WorkItem exists, exhaustive switch on status:
-   - `COMPLETED` with "approved" outcome → return `Approved(PlanApproval)`
-   - `REJECTED` → return `Rejected`
+   - `COMPLETED`:
+     - outcome = `"Approve"` → return `Approved(PlanApproval)`
+     - otherwise (null, unrecognized) → log warning, return `None` (anomalous completion — force re-evaluation)
+   - `REJECTED` → return `Rejected(planReference, reason)` where:
+     - `planReference` — extracted from WorkItem payload
+     - `reason` — `Objects.requireNonNullElse(ref.resolution(), "rejected")`. Note: `WorkItemService.reject()` does not store the rejection reason on the item's `resolution` field — the `reason` parameter goes to audit/lifecycle events only. Detailed rejection reasons are available in casehub-work's audit trail.
    - `EXPIRED`, `CANCELLED`, `OBSOLETE` → return `None` (fresh start — provisioner may request approval again)
    - `FAULTED` → return `None` (system error during WorkItem processing — allow retry with new WorkItem)
    - `ESCALATED` → return `None` (terminal in the status enum — the escalation target manages the approval outside this WorkItem lifecycle; a new WorkItem is created if the provisioner requests approval again)
 3. No WorkItem found → return `None`
+
+The COMPLETED branch is effectively an approve-only guard. Since permitted outcomes are `Approve` and `Reject`, the human rejection path is `WorkItemService.reject()` → `REJECTED` status (not `COMPLETED + "Reject"` outcome). The COMPLETED branch confirms the outcome is `"Approve"` before returning `Approved`; any other COMPLETED outcome is anomalous.
 
 ASSUMPTION: `findByCallerRef()` returns the most recently created WorkItem with the given callerRef. If a callerRef has multiple terminal WorkItems (e.g., first expired, second completed), the most recent must be returned. **Tracked as casehubio/work#280** — either document this as an API guarantee or add `findLatestByCallerRef()`.
 
@@ -247,9 +255,12 @@ ASSUMPTION: `findByCallerRef()` returns the most recently created WorkItem with 
 Programmable mock in `testing/`:
 
 - `programCheck(NodeId, StepAction, ApprovalCheckResult)` — program check results
+- `programRecordPending(NodeId, StepAction, StepOutcome)` — program recordPending results
 - `check()` — returns programmed result or `None`
-- `recordPending()` — records the call, returns Skipped
+- `recordPending()` — records the call, returns programmed result or `Skipped`
 - `recorded()` — returns list of recorded pending approvals
+
+Both methods are programmable — consumers can test error paths (e.g., `programRecordPending(nodeId, PROVISION, new StepOutcome.Failed("creation error"))`) and verify their domain code handles failures correctly.
 
 ## CaseTransitionExecutor
 
@@ -297,6 +308,10 @@ handler.check() returns None (terminal non-decision) → provisioner called fres
 8. **Plan staleness is the provisioner's responsibility** — when a provisioner receives `PlanApproval("plan-v1")` but the underlying desired spec has evolved, only the provisioner can judge plan freshness. If stale, it returns a new `PendingApproval("plan-v2")`. The handler/runtime cannot assess plan validity. There is no mechanism to proactively cancel stale WorkItems when desired state changes — a new WorkItem is created when the provisioner requests approval again after the stale WorkItem's approval is consumed.
 
 9. **Deprovision path: no requiresHuman, yes PendingApprovalHandler** — deprovision is always automated for human nodes (see `2026-06-26-workitem-human-node-handler-design.md`). PendingApproval for deprovision is a distinct concern: approval before decommissioning a production resource, regardless of whether the node required human action for provisioning.
+
+10. **requiresHuman takes precedence over PendingApprovalHandler** — `HumanNodeHandler` replaces the provisioner; `PendingApprovalHandler` wraps the provisioner. When `requiresHuman=true`, there is no provisioner to wrap, so PendingApprovalHandler is never consulted. A node cannot be both human-provisioned and approval-gated through this SPI.
+
+11. **COMPLETED is an approve-only guard; REJECTED is the rejection path** — `WorkItemService.reject()` produces `REJECTED` status. `WorkItemService.complete()` produces `COMPLETED` status. Since permitted outcomes are `Approve` and `Reject`, COMPLETED should only appear with outcome `"Approve"`. Any other COMPLETED outcome is anomalous and maps to `None` with a warning log.
 
 ## NodeProvisioner SPI Documentation
 
