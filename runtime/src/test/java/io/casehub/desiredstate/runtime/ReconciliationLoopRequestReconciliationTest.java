@@ -21,9 +21,17 @@ class ReconciliationLoopRequestReconciliationTest {
     @Test
     void requestReconciliationTriggersReconcileForTenant() throws Exception {
         var readActualCount = new AtomicInteger(0);
+        var initialLatch = new CountDownLatch(1);
+        var requestLatch = new CountDownLatch(1);
+        var baselineSet = new AtomicInteger(-1);
 
         ActualStateAdapter adapter = (desired, tenancyId) -> {
-            readActualCount.incrementAndGet();
+            int count = readActualCount.incrementAndGet();
+            if (count == 1) {
+                initialLatch.countDown();
+            } else if (baselineSet.get() >= 0 && count > baselineSet.get()) {
+                requestLatch.countDown();
+            }
             return new ActualState(java.util.Map.of());
         };
 
@@ -40,15 +48,17 @@ class ReconciliationLoopRequestReconciliationTest {
         var factory = new DefaultDesiredStateGraphFactory();
         loop.start("tenant-1", factory.empty());
 
-        // Wait for initial reconciliation to settle
-        Thread.sleep(200);
+        // Wait for initial reconciliation
+        assertTrue(initialLatch.await(2, TimeUnit.SECONDS), "Initial reconciliation did not occur");
         int baseline = readActualCount.get();
+        baselineSet.set(baseline);
 
         // Request reconciliation
         loop.requestReconciliation("tenant-1");
 
-        // Wait for debounce window + execution time
-        Thread.sleep(300);
+        // Wait for reconciliation triggered by request
+        assertTrue(requestLatch.await(2, TimeUnit.SECONDS),
+            "Reconciliation not triggered by request. Baseline: " + baseline + ", current: " + readActualCount.get());
 
         assertTrue(readActualCount.get() > baseline,
             "Expected reconciliation to be triggered. Baseline: " + baseline + ", current: " + readActualCount.get());
