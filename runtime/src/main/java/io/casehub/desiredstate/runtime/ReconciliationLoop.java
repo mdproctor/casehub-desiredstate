@@ -152,6 +152,23 @@ public class ReconciliationLoop {
         loop.updateDesired(newDesired);
     }
 
+    /**
+     * Requests an out-of-band reconciliation for a tenant. Schedules a debounced
+     * reconciliation cycle after the configured debounce window. If called multiple
+     * times within the window, the previous scheduled reconciliation is cancelled
+     * and rescheduled.
+     *
+     * <p>This is a no-op if no loop is running for the given tenant.
+     *
+     * @param tenancyId the tenant identifier
+     */
+    public void requestReconciliation(String tenancyId) {
+        TenantLoop loop = loops.get(tenancyId);
+        if (loop != null) {
+            loop.scheduleReconciliation();
+        }
+    }
+
     @PreDestroy
     void shutdown() {
         for (String tenancyId : loops.keySet()) {
@@ -176,6 +193,7 @@ public class ReconciliationLoop {
         private final AtomicReference<DesiredStateGraph> desiredRef;
         private volatile Cancellable eventSubscription;
         private volatile ScheduledFuture<?> resyncFuture;
+        private volatile ScheduledFuture<?> requestedReconciliation;
 
         TenantLoop(String tenancyId, DesiredStateGraph desired) {
             this.tenancyId = tenancyId;
@@ -210,10 +228,26 @@ public class ReconciliationLoop {
             if (resyncFuture != null) {
                 resyncFuture.cancel(false);
             }
+            if (requestedReconciliation != null) {
+                requestedReconciliation.cancel(false);
+            }
         }
 
         void updateDesired(DesiredStateGraph newDesired) {
             desiredRef.set(newDesired);
+        }
+
+        void scheduleReconciliation() {
+            synchronized (this) {
+                if (requestedReconciliation != null && !requestedReconciliation.isDone()) {
+                    requestedReconciliation.cancel(false);
+                }
+                requestedReconciliation = scheduler.schedule(
+                    this::reconcile,
+                    debounceWindow.toMillis(),
+                    TimeUnit.MILLISECONDS
+                );
+            }
         }
 
         private static final String INSTRUMENTATION_NAME = "io.casehub.desiredstate";
