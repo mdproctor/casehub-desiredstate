@@ -62,10 +62,13 @@ package io.casehub.desiredstate.api;
 public interface PendingApprovalHandler {
     ApprovalCheckResult check(DesiredNode node, StepAction action, String tenancyId);
     StepOutcome recordPending(DesiredNode node, StepAction action, String tenancyId, String planReference);
+    void acknowledgeRejection(DesiredNode node, StepAction action, String tenancyId);
 }
 ```
 
 Takes `DesiredNode` + `StepAction` + `tenancyId` rather than full context types. The handler only needs identity info for lookup/creation.
+
+`acknowledgeRejection()` consumes a rejection so it doesn't block future cycles. Called by the executor after `check()` returns `Rejected`, before returning `StepOutcome.Rejected`. Without this, the REJECTED WorkItem persists at the same callerRef and `check()` returns `Rejected` every cycle — an infinite fault-event loop with no recovery path.
 
 ## Changes to Existing API Types
 
@@ -175,6 +178,11 @@ public class NoOpPendingApprovalHandler implements PendingApprovalHandler {
         return new StepOutcome.Failed(
             "pending approval: " + planReference + " — no PendingApprovalHandler configured");
     }
+
+    @Override
+    public void acknowledgeRejection(DesiredNode node, StepAction action, String tenancyId) {
+        // no-op — no WorkItem to consume
+    }
 }
 ```
 
@@ -190,7 +198,7 @@ Modified `executeProvision()` flow:
    - `None` → create `ProvisionContext(tenancyId, graph)`, call provisioner
    - `Pending` → return `Skipped("pending approval: " + planRef)`
    - `Approved` → create `ProvisionContext(tenancyId, graph, approval)`, call provisioner
-   - `Rejected` → return `Rejected("approval rejected: " + reason)`
+   - `Rejected` → call `handler.acknowledgeRejection(node, action, tenancyId)` (consumes the rejection so the next cycle returns `None`) → return `Rejected("approval rejected: " + reason)`
 4. If provisioner returns `PendingApproval` → call `handler.recordPending()`
 
 `executeDeprovision()` follows the same pattern with `StepAction.DEPROVISION` and `DeprovisionContext`. Note: the deprovision path intentionally has no `requiresHuman` check — deprovision is always automated (see `2026-06-26-workitem-human-node-handler-design.md` constraints). The `PendingApprovalHandler` check IS added to deprovision because approval-gated deprovision is a distinct concern: a provisioner may require approval before decommissioning a production resource, regardless of whether the node required human action to provision.
@@ -218,6 +226,18 @@ public record WorkItemRef(UUID id, WorkItemStatus status, String callerRef,
 `WorkItemSpiAdapter.toRef()` updated to include `wi.payload`. Backwards-compatible addition — existing callers that destructure the record will get a compile error (desirable: forces them to handle the new field).
 
 This prerequisite must ship before `WorkItemPendingApprovalHandler` can be implemented. Without it, the Approved and Rejected paths in `check()` cannot construct `PlanApproval` or `ApprovalCheckResult.Rejected` — both require `planReference`.
+
+## Cross-Repo Prerequisite: casehubio/work#282
+
+`WorkItemCreator` has no method to transition a WorkItem to OBSOLETE. The `acknowledgeRejection()` implementation needs to mark a REJECTED WorkItem as OBSOLETE so it no longer blocks the callerRef.
+
+work#282 adds `obsoleteByCallerRef(String callerRef)` to `WorkItemCreator`:
+
+```java
+void obsoleteByCallerRef(String callerRef);
+```
+
+Marks the most recent terminal WorkItem with the given callerRef as OBSOLETE (terminal→OBSOLETE transition). `WorkItemService` allows this transition — OBSOLETE means "superseded/no longer relevant."
 
 ## Work-Adapter Changes
 
@@ -258,6 +278,11 @@ ASSUMPTION: `findByCallerRef()` returns the most recently created WorkItem with 
    - Payload: planReference (for round-trip)
 3. Return `Skipped("pending approval: WorkItem " + created.id())`
 
+**acknowledgeRejection() logic:**
+1. Build callerRef: `desiredstate-approval:<tenancyId>:<nodeId>:<action>`
+2. Call `workItemCreator.obsoleteByCallerRef(callerRef)` — marks the REJECTED WorkItem as OBSOLETE (requires work#282)
+3. Next cycle: `findByCallerRef()` returns the now-OBSOLETE WorkItem → maps to `None` → provisioner called → can request new approval
+
 **PlanApproval population:**
 - `planReference` — `ref.payload()` (round-tripped from provisioner via WorkItemCreateRequest.payload → WorkItemRef.payload; requires work#281)
 - `approvedBy` — `Objects.requireNonNullElse(WorkItemRef.assigneeId(), "system")`. Normally the person who completed the WorkItem; falls back to `"system"` for system completions or bulk operations where no assignee is recorded. `PlanApproval.approvedBy` remains non-null for audit trail integrity.
@@ -273,7 +298,9 @@ Programmable mock in `testing/`:
 - `programRecordPending(NodeId, StepAction, StepOutcome)` — program recordPending results
 - `check()` — returns programmed result or `None`
 - `recordPending()` — records the call, returns programmed result or `Skipped`
+- `acknowledgeRejection()` — records the call (no-op otherwise)
 - `recorded()` — returns list of recorded pending approvals
+- `acknowledgedRejections()` — returns list of acknowledged rejections
 
 Both methods are programmable — consumers can test error paths (e.g., `programRecordPending(nodeId, PROVISION, new StepOutcome.Failed("creation error"))`) and verify their domain code handles failures correctly.
 
@@ -299,7 +326,7 @@ ActualStateAdapter reports ABSENT → planner creates PROVISION step → handler
 handler.check() returns Approved → context enriched with PlanApproval → provisioner called with approval context → provisioner proceeds → Success. Next cycle: PRESENT, converged.
 
 **Alternative — Rejected:**
-handler.check() returns Rejected → Rejected("approval rejected: ...") → faultFeedback pattern-matches Rejected, creates FaultEvent with APPROVAL_REJECTED → FaultPolicyEngine evaluates → domain policy decides response.
+handler.check() returns Rejected → executor calls handler.acknowledgeRejection() (marks REJECTED WorkItem as OBSOLETE) → returns Rejected("approval rejected: ...") → faultFeedback pattern-matches Rejected, creates FaultEvent with APPROVAL_REJECTED → FaultPolicyEngine evaluates → domain policy decides response. **Next cycle:** check() finds OBSOLETE WorkItem → None → provisioner called → can request new approval or fail based on updated context.
 
 **Alternative — Expired/Cancelled:**
 handler.check() returns None (terminal non-decision) → provisioner called fresh → may return PendingApproval again → new WorkItem cycle.
@@ -330,7 +357,9 @@ handler.check() returns None (terminal non-decision) → provisioner called fres
 
 12. **planReference round-trips via WorkItemRef.payload()** — `WorkItemCreateRequest.payload` stores the provisioner's `planReference` during `recordPending()`. `WorkItemRef.payload()` (after work#281 ships) exposes it during `check()`. This is the only data the handler needs to round-trip — all other PlanApproval fields (`approvedBy`, `approvedAt`) are derived from WorkItemRef fields or observation time. Alternatives considered: embedding in callerRef (breaks lookup — check() doesn't know planReference before calling provisioner), overloading resolution field (semantic conflict — resolution is overwritten by `complete()` and used for rejection reason).
 
-13. **Rejected reason is forward-compatible, not currently functional** — `WorkItemService.reject()` does not store the rejection reason on `WorkItem.resolution` — the `reason` parameter goes to audit/lifecycle events only. With current casehub-work, `ApprovalCheckResult.Rejected.reason()` will always be the default `"rejected"`. The field exists to model the domain correctly (a rejection has a reason) and for forward compatibility if casehub-work evolves. The `APPROVAL_REJECTED` FaultType — not the reason string — is what drives fault policy routing.
+13. **Rejection is consumed on detection via acknowledgeRejection()** — without consumption, a REJECTED WorkItem blocks the callerRef permanently: every cycle, `check()` finds the same REJECTED WorkItem, returns `Rejected`, and the provisioner is never called again. The executor calls `acknowledgeRejection()` after `check()` returns `Rejected`, before returning `StepOutcome.Rejected`. The work-adapter implementation marks the WorkItem as OBSOLETE via `workItemCreator.obsoleteByCallerRef()` (requires work#282). Next cycle: OBSOLETE → `None` → provisioner called → can request new approval. The fault event fires exactly once per rejection — no infinite loop, and the provisioner gets a fresh start.
+
+14. **Rejected reason is forward-compatible, not currently functional** — `WorkItemService.reject()` does not store the rejection reason on `WorkItem.resolution` — the `reason` parameter goes to audit/lifecycle events only. With current casehub-work, `ApprovalCheckResult.Rejected.reason()` will always be the default `"rejected"`. The field exists to model the domain correctly (a rejection has a reason) and for forward compatibility if casehub-work evolves. The `APPROVAL_REJECTED` FaultType — not the reason string — is what drives fault policy routing.
 
 ## NodeProvisioner SPI Documentation
 
@@ -352,3 +381,4 @@ Same protocol applies to `deprovision()` via `DeprovisionContext.approval()`.
 - **ARC42STORIES.MD placement** — tracked as #48
 - **findByCallerRef ordering semantics** — tracked as casehubio/work#280
 - **WorkItemRef payload field** — prerequisite, tracked as casehubio/work#281
+- **WorkItemCreator.obsoleteByCallerRef** — prerequisite, tracked as casehubio/work#282
