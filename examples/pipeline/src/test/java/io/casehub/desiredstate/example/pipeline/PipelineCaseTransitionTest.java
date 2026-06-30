@@ -8,6 +8,7 @@ import io.casehub.api.model.event.CaseHubEventType;
 import io.casehub.api.model.event.EventStreamType;
 import io.casehub.desiredstate.api.*;
 import io.casehub.desiredstate.engine.CaseTransitionExecutor;
+import io.casehub.desiredstate.engine.DesiredStateExecutionRegistry;
 import io.casehub.desiredstate.engine.TransitionWorkflowGenerator;
 import io.casehub.desiredstate.runtime.DefaultDesiredStateGraphFactory;
 import io.casehub.desiredstate.runtime.TransitionPlanner;
@@ -43,7 +44,22 @@ class PipelineCaseTransitionTest {
         planner = new TransitionPlanner();
         factory = new DefaultDesiredStateGraphFactory();
         runtime = new CapturingCaseHubRuntime();
-        executor = new CaseTransitionExecutor(new TransitionWorkflowGenerator(), runtime);
+        PendingApprovalHandler approvalHandler = new PendingApprovalHandler() {
+            @Override
+            public ApprovalCheckResult check(DesiredNode node, StepAction action, String tenancyId) {
+                return new ApprovalCheckResult.None();
+            }
+            @Override
+            public StepOutcome recordPending(DesiredNode node, StepAction action, String tenancyId, String planReference) {
+                return new StepOutcome.Skipped("test: pending");
+            }
+            @Override
+            public void acknowledgeRejection(DesiredNode node, StepAction action, String tenancyId) {
+            }
+        };
+        DesiredStateExecutionRegistry registry = new DesiredStateExecutionRegistry();
+        executor = new CaseTransitionExecutor(
+            new TransitionWorkflowGenerator(), runtime, approvalHandler, registry);
     }
 
     @Test

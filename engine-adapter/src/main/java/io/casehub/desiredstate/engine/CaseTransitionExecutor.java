@@ -8,8 +8,11 @@ import io.casehub.engine.flow.FlowWorkerFunction;
 import io.casehub.api.model.HumanTaskTarget;
 import io.casehub.worker.api.Capability;
 import io.casehub.worker.api.Worker;
+import io.casehub.desiredstate.api.ApprovalCheckResult;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.OrderedStep;
+import io.casehub.desiredstate.api.PendingApprovalHandler;
+import io.casehub.desiredstate.api.StepAction;
 import io.casehub.desiredstate.api.StepOutcome;
 import io.casehub.desiredstate.api.TransitionExecutor;
 import io.casehub.desiredstate.api.TransitionPlan;
@@ -49,12 +52,18 @@ public class CaseTransitionExecutor implements TransitionExecutor {
 
     private final TransitionWorkflowGenerator workflowGenerator;
     private final CaseHubRuntime caseHubRuntime;
+    private final PendingApprovalHandler pendingApprovalHandler;
+    private final DesiredStateExecutionRegistry executionRegistry;
 
     @Inject
     public CaseTransitionExecutor(TransitionWorkflowGenerator workflowGenerator,
-                                  CaseHubRuntime caseHubRuntime) {
+                                  CaseHubRuntime caseHubRuntime,
+                                  PendingApprovalHandler pendingApprovalHandler,
+                                  DesiredStateExecutionRegistry executionRegistry) {
         this.workflowGenerator = workflowGenerator;
         this.caseHubRuntime = caseHubRuntime;
+        this.pendingApprovalHandler = pendingApprovalHandler;
+        this.executionRegistry = executionRegistry;
     }
 
     @Override
@@ -63,27 +72,82 @@ public class CaseTransitionExecutor implements TransitionExecutor {
             return Uni.createFrom().item(new TransitionResult(Map.of()));
         }
 
+        Map<NodeId, StepOutcome> preFilteredOutcomes = new LinkedHashMap<>();
+        List<OrderedStep> runnableRemovals = new ArrayList<>();
+        List<OrderedStep> runnableAdditions = new ArrayList<>();
+
+        for (OrderedStep step : plan.removals()) {
+            StepOutcome filtered = checkApproval(step, tenancyId);
+            if (filtered != null) {
+                preFilteredOutcomes.put(step.node().id(), filtered);
+            } else {
+                runnableRemovals.add(step);
+            }
+        }
+
+        for (OrderedStep step : plan.additions()) {
+            StepOutcome filtered = checkApproval(step, tenancyId);
+            if (filtered != null) {
+                preFilteredOutcomes.put(step.node().id(), filtered);
+            } else {
+                runnableAdditions.add(step);
+            }
+        }
+
+        // If everything was filtered, return immediately — no case needed
+        if (runnableRemovals.isEmpty() && runnableAdditions.isEmpty()) {
+            return Uni.createFrom().item(new TransitionResult(preFilteredOutcomes));
+        }
+
+        TransitionPlan runnablePlan = new TransitionPlan(
+            runnableRemovals, runnableAdditions, plan.before(), plan.after());
+
+        String executionId = UUID.randomUUID().toString();
+        executionRegistry.register(executionId, plan.after(), tenancyId);
+
         return Uni.createFrom().completionStage(() -> {
-            CaseDefinition caseDefinition = buildCaseDefinition(plan);
+            CaseDefinition caseDefinition = buildCaseDefinition(runnablePlan, executionId);
 
             Map<String, Object> inputData = Map.of(
-                "removals", plan.removals().size(),
-                "additions", plan.additions().size(),
-                "graphVersion", plan.after().version()
+                "removals", runnablePlan.removals().size(),
+                "additions", runnablePlan.additions().size(),
+                "graphVersion", runnablePlan.after().version()
             );
 
             return caseHubRuntime.startCase(caseDefinition, inputData);
-        }).map(caseId -> {
+        }).onFailure().invoke(() -> executionRegistry.remove(executionId))
+          .map(caseId -> {
             LOG.infof("Started desired-state transition case %s (removals=%d, additions=%d)",
-                caseId, plan.removals().size(), plan.additions().size());
+                caseId, runnableRemovals.size(), runnableAdditions.size());
 
-            // V1: optimistically report success for all steps.
-            // Follow-up: observe case completion events and collect actual per-node outcomes.
-            return buildOptimisticResult(plan, caseId);
+            executionRegistry.remove(executionId);
+
+            Map<NodeId, StepOutcome> allOutcomes = new LinkedHashMap<>(preFilteredOutcomes);
+            allOutcomes.putAll(buildOptimisticResult(runnablePlan, caseId).outcomes());
+            return new TransitionResult(allOutcomes);
         });
     }
 
-    CaseDefinition buildCaseDefinition(TransitionPlan plan) {
+    private StepOutcome checkApproval(OrderedStep step, String tenancyId) {
+        if (step.node().requiresHuman()) {
+            return null; // human nodes handled separately in buildCaseDefinition
+        }
+        ApprovalCheckResult check = pendingApprovalHandler.check(
+            step.node(), step.action(), tenancyId);
+        return switch (check) {
+            case ApprovalCheckResult.Pending p ->
+                new StepOutcome.Skipped("pending approval: " + p.planReference());
+            case ApprovalCheckResult.Rejected r -> {
+                pendingApprovalHandler.acknowledgeRejection(
+                    step.node(), step.action(), tenancyId);
+                yield new StepOutcome.Rejected("approval rejected: " + r.reason());
+            }
+            case ApprovalCheckResult.Approved ignored -> null; // include in case
+            case ApprovalCheckResult.None ignored -> null; // include in case
+        };
+    }
+
+    CaseDefinition buildCaseDefinition(TransitionPlan plan, String executionId) {
         List<Worker> workers = new ArrayList<>(2);
         List<Binding> bindings = new ArrayList<>(2);
 
@@ -96,12 +160,12 @@ public class CaseTransitionExecutor implements TransitionExecutor {
 
         if (!plan.removals().isEmpty()) {
             Workflow pruneWorkflow = workflowGenerator.generate(
-                plan.removals(), NAMESPACE, "prune-phase", CASE_VERSION
+                plan.removals(), NAMESPACE, "prune-phase", CASE_VERSION, executionId
             );
 
             Worker pruneWorker = Worker.builder()
                 .name("prune")
-                .capabilities(dispatchCapability)
+                .capabilityName(dispatchCapability.name())
                 .function(new FlowWorkerFunction(pruneWorkflow))
                 .description("Removes nodes no longer in the desired state (leaves before roots)")
                 .build();
@@ -122,12 +186,12 @@ public class CaseTransitionExecutor implements TransitionExecutor {
 
         if (!automatedAdditions.isEmpty()) {
             Workflow growWorkflow = workflowGenerator.generate(
-                automatedAdditions, NAMESPACE, "grow-phase", CASE_VERSION
+                automatedAdditions, NAMESPACE, "grow-phase", CASE_VERSION, executionId
             );
 
             Worker growWorker = Worker.builder()
                 .name("grow")
-                .capabilities(dispatchCapability)
+                .capabilityName(dispatchCapability.name())
                 .function(new FlowWorkerFunction(growWorkflow))
                 .description("Provisions new nodes in the desired state (roots before leaves)")
                 .build();

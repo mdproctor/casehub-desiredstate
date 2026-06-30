@@ -30,13 +30,14 @@ public class TransitionWorkflowGenerator {
     /**
      * Generate a Serverless Workflow from ordered steps.
      *
-     * @param steps     the steps to translate into workflow tasks
-     * @param namespace workflow namespace (e.g. "io.casehub.desiredstate")
-     * @param name      workflow name (e.g. "prune-phase" or "grow-phase")
-     * @param version   workflow version
+     * @param steps       the steps to translate into workflow tasks
+     * @param namespace   workflow namespace (e.g. "io.casehub.desiredstate")
+     * @param name        workflow name (e.g. "prune-phase" or "grow-phase")
+     * @param version     workflow version
+     * @param executionId unique identifier for this execution context
      * @return a fully-formed Workflow ready for Worker construction
      */
-    public Workflow generate(List<OrderedStep> steps, String namespace, String name, String version) {
+    public Workflow generate(List<OrderedStep> steps, String namespace, String name, String version, String executionId) {
         Document document = new Document(DSL_VERSION, namespace, name, version);
         document.setTitle(name + " transition workflow");
         document.setSummary("Auto-generated desired-state transition workflow with " + steps.size() + " steps");
@@ -44,17 +45,18 @@ public class TransitionWorkflowGenerator {
         List<TaskItem> taskItems = new ArrayList<>(steps.size());
         for (int i = 0; i < steps.size(); i++) {
             OrderedStep step = steps.get(i);
-            taskItems.add(createTaskItem(step, i));
+            taskItems.add(createTaskItem(step, i, executionId));
         }
 
         return new Workflow(document, taskItems);
     }
 
-    private TaskItem createTaskItem(OrderedStep step, int index) {
+    private TaskItem createTaskItem(OrderedStep step, int index, String executionId) {
         String taskName = "step-" + index + "-" + step.action().name().toLowerCase()
             + "-" + step.node().id().value();
 
         FunctionArguments args = new FunctionArguments()
+            .withAdditionalProperty("executionId", executionId)
             .withAdditionalProperty("nodeId", step.node().id().value())
             .withAdditionalProperty("nodeType", step.node().type().value())
             .withAdditionalProperty("action", step.action().name());
