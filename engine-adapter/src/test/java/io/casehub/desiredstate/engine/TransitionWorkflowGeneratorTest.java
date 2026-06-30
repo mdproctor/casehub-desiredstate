@@ -28,7 +28,7 @@ class TransitionWorkflowGeneratorTest {
 
     @Test
     void emptyStepsProduceEmptyWorkflow() {
-        Workflow workflow = generator.generate(List.of(), "ns", "empty", "1.0.0");
+        Workflow workflow = generator.generate(List.of(), "ns", "empty", "1.0.0", "exec-1");
 
         assertThat(workflow.getDocument()).isNotNull();
         assertThat(workflow.getDocument().getNamespace()).isEqualTo("ns");
@@ -44,7 +44,7 @@ class TransitionWorkflowGeneratorTest {
             StepAction.PROVISION
         );
 
-        Workflow workflow = generator.generate(List.of(step), "io.casehub.desiredstate", "grow-phase", "1.0.0");
+        Workflow workflow = generator.generate(List.of(step), "io.casehub.desiredstate", "grow-phase", "1.0.0", "exec-abc");
 
         assertThat(workflow.getDo()).hasSize(1);
         TaskItem taskItem = workflow.getDo().get(0);
@@ -54,6 +54,7 @@ class TransitionWorkflowGeneratorTest {
         assertThat(callFunction.getCall()).isEqualTo("desiredstate:dispatch");
 
         Map<String, Object> args = callFunction.getWith().getAdditionalProperties();
+        assertThat(args).containsEntry("executionId", "exec-abc");
         assertThat(args).containsEntry("nodeId", "web-server");
         assertThat(args).containsEntry("nodeType", "vm");
         assertThat(args).containsEntry("action", "PROVISION");
@@ -67,7 +68,7 @@ class TransitionWorkflowGeneratorTest {
             new OrderedStep(node("lb", "loadbalancer"), StepAction.PROVISION)
         );
 
-        Workflow workflow = generator.generate(steps, "ns", "grow", "2.0.0");
+        Workflow workflow = generator.generate(steps, "ns", "grow", "2.0.0", "exec-test");
 
         assertThat(workflow.getDo()).hasSize(3);
         assertThat(workflow.getDo().get(0).getName()).isEqualTo("step-0-provision-db");
@@ -82,7 +83,7 @@ class TransitionWorkflowGeneratorTest {
             StepAction.DEPROVISION
         );
 
-        Workflow workflow = generator.generate(List.of(step), "ns", "prune", "1.0.0");
+        Workflow workflow = generator.generate(List.of(step), "ns", "prune", "1.0.0", "exec-test");
 
         TaskItem taskItem = workflow.getDo().get(0);
         assertThat(taskItem.getName()).contains("deprovision");
@@ -98,7 +99,8 @@ class TransitionWorkflowGeneratorTest {
             List.of(new OrderedStep(node("n1", "t1"), StepAction.PROVISION)),
             "io.casehub.test",
             "test-workflow",
-            "3.1.0"
+            "3.1.0",
+            "exec-test"
         );
 
         assertThat(workflow.getDocument().getDsl()).isEqualTo(TransitionWorkflowGenerator.DSL_VERSION);

@@ -10,6 +10,7 @@ import io.casehub.api.model.event.CaseHubEventType;
 import io.casehub.api.model.event.EventStreamType;
 import io.casehub.desiredstate.api.*;
 import io.casehub.desiredstate.runtime.DefaultDesiredStateGraphFactory;
+import io.casehub.desiredstate.testing.MockPendingApprovalHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -25,28 +26,41 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CaseTransitionExecutorTest {
 
     private TransitionWorkflowGenerator workflowGenerator;
+    private MockPendingApprovalHandler approvalHandler;
+    private DesiredStateExecutionRegistry executionRegistry;
     private CaseTransitionExecutor executor;
 
     @BeforeEach
     void setUp() {
         workflowGenerator = new TransitionWorkflowGenerator();
-        executor = new CaseTransitionExecutor(workflowGenerator, new StubCaseHubRuntime());
+        approvalHandler = new MockPendingApprovalHandler();
+        executionRegistry = new DesiredStateExecutionRegistry();
+        executor = new CaseTransitionExecutor(
+            workflowGenerator, new StubCaseHubRuntime(),
+            approvalHandler, executionRegistry);
     }
 
     static class StubCaseHubRuntime implements CaseHubRuntime {
+        int casesStarted = 0;
+
         @Override public CompletionStage<UUID> startCase(CaseDefinition definition) {
+            casesStarted++;
             return CompletableFuture.completedFuture(UUID.randomUUID());
         }
         @Override public CompletionStage<UUID> startCase(CaseDefinition definition, Object inputData) {
+            casesStarted++;
             return CompletableFuture.completedFuture(UUID.randomUUID());
         }
         @Override public CompletionStage<UUID> startCase(CaseDefinition definition, Object inputData, UUID parentCaseId, PropagationContext ctx) {
+            casesStarted++;
             return CompletableFuture.completedFuture(UUID.randomUUID());
         }
         @Override public CompletionStage<UUID> startCase(CaseDefinition definition, Object inputData, Map<String, Object> semanticData) {
+            casesStarted++;
             return CompletableFuture.completedFuture(UUID.randomUUID());
         }
         @Override public CompletionStage<UUID> startCase(CaseDefinition definition, Object inputData, Map<String, Object> semanticData, UUID parentCaseId, PropagationContext ctx) {
+            casesStarted++;
             return CompletableFuture.completedFuture(UUID.randomUUID());
         }
         @Override public CompletionStage<Void> signal(UUID caseId, String path, Object value) {
@@ -91,7 +105,7 @@ class CaseTransitionExecutorTest {
                 graph, graph
         );
 
-        CaseDefinition caseDefinition = executor.buildCaseDefinition(plan);
+        CaseDefinition caseDefinition = executor.buildCaseDefinition(plan, "test-exec-id");
 
         long humanTaskBindings = caseDefinition.getBindings().stream()
                 .filter(b -> b.target() instanceof HumanTaskTarget)
@@ -128,7 +142,7 @@ class CaseTransitionExecutorTest {
                 graph, graph
         );
 
-        CaseDefinition caseDefinition = executor.buildCaseDefinition(plan);
+        CaseDefinition caseDefinition = executor.buildCaseDefinition(plan, "test-exec-id");
 
         assertThat(caseDefinition.getWorkers())
                 .as("Grow worker should only contain automated nodes")
@@ -177,7 +191,7 @@ class CaseTransitionExecutorTest {
                 graph, graph
         );
 
-        CaseDefinition caseDefinition = executor.buildCaseDefinition(plan);
+        CaseDefinition caseDefinition = executor.buildCaseDefinition(plan, "test-exec-id");
 
         long humanTaskBindings = caseDefinition.getBindings().stream()
                 .filter(b -> b.target() instanceof HumanTaskTarget)
@@ -200,11 +214,120 @@ class CaseTransitionExecutorTest {
                 graph, graph
         );
 
-        CaseDefinition caseDefinition = executor.buildCaseDefinition(plan);
+        CaseDefinition caseDefinition = executor.buildCaseDefinition(plan, "test-exec-id");
 
         assertThat(caseDefinition.getWorkers()).isEmpty();
         assertThat(caseDefinition.getBindings()).hasSize(1);
         assertThat(caseDefinition.getBindings().get(0).target()).isInstanceOf(HumanTaskTarget.class);
+    }
+
+    @Test
+    void pendingApproval_nodeSkipped() {
+        DesiredNode node = new DesiredNode(
+            NodeId.of("gated"), NodeType.of("service"), new TestSpec(), false);
+
+        approvalHandler.programCheck(
+            NodeId.of("gated"), StepAction.PROVISION,
+            new ApprovalCheckResult.Pending("plan-ref-1"));
+
+        DesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+        DesiredStateGraph graph = factory.of(List.of(node), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+            List.of(),
+            List.of(new OrderedStep(node, StepAction.PROVISION)),
+            graph, graph);
+
+        TransitionResult result = executor.execute(plan, "tenant-a")
+            .await().indefinitely();
+
+        assertThat(result.outcomes().get(NodeId.of("gated")))
+            .isInstanceOf(StepOutcome.Skipped.class);
+        assertThat(((StepOutcome.Skipped) result.outcomes().get(NodeId.of("gated"))).reason())
+            .contains("pending approval");
+    }
+
+    @Test
+    void rejectedApproval_nodeRejectedAndAcknowledged() {
+        DesiredNode node = new DesiredNode(
+            NodeId.of("rejected"), NodeType.of("service"), new TestSpec(), false);
+
+        approvalHandler.programCheck(
+            NodeId.of("rejected"), StepAction.PROVISION,
+            new ApprovalCheckResult.Rejected("plan-ref-1", "policy violation"));
+
+        DesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+        DesiredStateGraph graph = factory.of(List.of(node), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+            List.of(),
+            List.of(new OrderedStep(node, StepAction.PROVISION)),
+            graph, graph);
+
+        TransitionResult result = executor.execute(plan, "tenant-a")
+            .await().indefinitely();
+
+        assertThat(result.outcomes().get(NodeId.of("rejected")))
+            .isInstanceOf(StepOutcome.Rejected.class);
+        assertThat(approvalHandler.acknowledgedRejections).hasSize(1);
+    }
+
+    @Test
+    void allNodesFiltered_noCaseStarted() {
+        DesiredNode node = new DesiredNode(
+            NodeId.of("pending"), NodeType.of("service"), new TestSpec(), false);
+
+        approvalHandler.programCheck(
+            NodeId.of("pending"), StepAction.PROVISION,
+            new ApprovalCheckResult.Pending("plan-ref-1"));
+
+        DesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+        DesiredStateGraph graph = factory.of(List.of(node), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+            List.of(),
+            List.of(new OrderedStep(node, StepAction.PROVISION)),
+            graph, graph);
+
+        StubCaseHubRuntime runtime = new StubCaseHubRuntime();
+        CaseTransitionExecutor exec = new CaseTransitionExecutor(
+            workflowGenerator, runtime, approvalHandler, executionRegistry);
+
+        TransitionResult result = exec.execute(plan, "tenant-a")
+            .await().indefinitely();
+
+        assertThat(result.outcomes()).containsKey(NodeId.of("pending"));
+        assertThat(runtime.casesStarted).isZero();
+    }
+
+    @Test
+    void mixedPlan_filteredAndAutomated() {
+        DesiredNode pendingNode = new DesiredNode(
+            NodeId.of("gated"), NodeType.of("service"), new TestSpec(), false);
+        DesiredNode autoNode = new DesiredNode(
+            NodeId.of("auto"), NodeType.of("service"), new TestSpec(), false);
+
+        approvalHandler.programCheck(
+            NodeId.of("gated"), StepAction.PROVISION,
+            new ApprovalCheckResult.Pending("plan-ref-1"));
+
+        DesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+        DesiredStateGraph graph = factory.of(List.of(pendingNode, autoNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+            List.of(),
+            List.of(
+                new OrderedStep(pendingNode, StepAction.PROVISION),
+                new OrderedStep(autoNode, StepAction.PROVISION)),
+            graph, graph);
+
+        TransitionResult result = executor.execute(plan, "tenant-a")
+            .await().indefinitely();
+
+        assertThat(result.outcomes().get(NodeId.of("gated")))
+            .isInstanceOf(StepOutcome.Skipped.class);
+        assertThat(result.outcomes().get(NodeId.of("auto")))
+            .isInstanceOf(StepOutcome.Succeeded.class);
     }
 
     private record TestSpec() implements NodeSpec {}
