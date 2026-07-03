@@ -41,6 +41,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `work-adapter/` | `casehub-desiredstate-work` | `io.casehub.desiredstate.work` | WorkItem-backed HumanNodeHandler + PendingApprovalHandler — creates WorkItems for requiresHuman nodes and approval-gated nodes via WorkItemCreator SPI. |
 | `examples/dungeon/` | `casehub-desiredstate-example-dungeon` | `io.casehub.desiredstate.example.dungeon` | Nefarious Dungeons — teaching example implementing all SPIs with 2D tile visualizer. |
 | `examples/pipeline/` | `casehub-desiredstate-example-pipeline` | `io.casehub.desiredstate.example.pipeline` | Data Pipeline — teaching example with medallion architecture (Bronze/Silver/Gold), schema validation, three-tier fault escalation (retry → AI → human), pluggable `ExecutionBackend` strategy per processing stage. |
+| `examples/spatial/` | `casehub-desiredstate-example-spatial` | `io.casehub.desiredstate.example.spatial` | Spatial/vector POC — 10x10 terrain grid, fog of war, three scenarios evaluating graph model with spatial state. Defense posture, attack waypoints, force distribution. |
 
 ## Core SPIs (api/)
 
