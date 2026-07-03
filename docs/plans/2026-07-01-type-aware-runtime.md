@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Spec: `docs/superpowers/specs/2026-07-01-type-aware-runtime-design.md`
+- Spec: `docs/specs/2026-07-01-type-aware-runtime-design.md`
 - `api/` module is pure Java — no CDI, no Quarkus, no Mutiny dependencies in production code
 - `runtime/` is a Quarkus library — CDI annotations allowed
 - `engine-adapter/` depends on `api` at compile scope, `runtime` at test scope only

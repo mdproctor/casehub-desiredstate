@@ -507,7 +507,7 @@ The DAG's partial-order dependencies are expressed inside the generated Serverle
 
 ## 15. References
 
-- Research doc: `docs/superpowers/research/2026-06-07-desired-state-management-research.md`
+- Research doc: `docs/research/2026-06-07-desired-state-management-research.md`
 - PLATFORM.md: `casehub-parent/docs/PLATFORM.md` — capability ownership, boundary rules
 - Protocols: `casehub/garden/docs/protocols/` — module-tier-structure, persistence-backend-cdi-priority, reactive-service-build-gating, no-workarounds-fix-the-design
 - Clojure loom: adjacency-map-over-persistent-maps pattern (inspired dual adjacency map design)

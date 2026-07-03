@@ -8,7 +8,7 @@
 
 **Tech Stack:** Java 21, Quarkus (arc, rest, vertx), SmallRye Mutiny, JUnit 5, AssertJ
 
-**Spec:** `docs/superpowers/specs/2026-06-15-data-pipeline-example-design.md`
+**Spec:** `docs/specs/2026-06-15-data-pipeline-example-design.md`
 
 ---
 

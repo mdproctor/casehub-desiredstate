@@ -18,7 +18,7 @@
 - NodeSpec records implement `NodeSpec` marker interface (has `default boolean requiresHuman() { return false; }`)
 - Tests use `DefaultDesiredStateGraphFactory` and `TransitionPlanner` from runtime
 - Assertions via AssertJ
-- Spec: `docs/superpowers/specs/2026-07-02-spatial-vector-poc-design.md` (workspace)
+- Spec: `docs/specs/2026-07-02-spatial-vector-poc-design.md` (workspace)
 
 ---
 
