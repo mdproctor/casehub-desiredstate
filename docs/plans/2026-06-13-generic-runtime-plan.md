@@ -8,7 +8,7 @@
 
 **Tech Stack:** Java 21, Quarkus 3.32.2, Mutiny, casehub-platform-api, casehub-engine-api/common/flow, casehub-work-api, Vert.x timers, SSE.
 
-**Spec:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md`
+**Spec:** `docs/specs/2026-06-12-generic-runtime-design.md`
 
 ---
 

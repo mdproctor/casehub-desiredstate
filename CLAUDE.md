@@ -20,8 +20,8 @@ for lightweight deployments; CaseTransitionExecutor (engine-adapter, classpath-a
 execution with Worker(Workflow) phases via casehub-engine-flow.
 
 **Architecture:** `ARC42STORIES.MD` — Arc42Stories format, CaseHub Foundation-tier profile
-**Research doc:** `docs/superpowers/research/2026-06-07-desired-state-management-research.md`
-**Design spec:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md`
+**Research doc:** `docs/research/2026-06-07-desired-state-management-research.md`
+**Design spec:** `docs/specs/2026-06-12-generic-runtime-design.md`
 
 ## Build Commands
 
@@ -120,7 +120,7 @@ Protocols live in `casehub/garden`. Do not write protocol files in this repo.
 
 | Skill | Writes to |
 |-------|-----------|
-| brainstorming (specs) | `docs/superpowers/specs/` |
+| brainstorming (specs) | `docs/specs/` |
 | adr | `docs/adr/` |
 | handover | workspace `HANDOFF.md` |
 | write-blog | workspace `blog/` |

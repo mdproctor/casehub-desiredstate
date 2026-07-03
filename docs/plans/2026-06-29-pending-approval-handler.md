@@ -8,7 +8,7 @@
 
 **Tech Stack:** Java 22, Quarkus 3.32, Mutiny, JUnit 5, AssertJ, casehub-work-api
 
-**Spec:** `docs/superpowers/specs/2026-06-28-pending-approval-handler-design.md`
+**Spec:** `docs/specs/2026-06-28-pending-approval-handler-design.md`
 
 ## Global Constraints
 

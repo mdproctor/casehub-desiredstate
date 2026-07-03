@@ -625,8 +625,8 @@ These require formal brainstorming before implementation begins:
 - [Reconfigurable Manufacturing Systems](https://www.sciencedirect.com/science/article/pii/S027861252100056X)
 
 **Related CaseHub specs:**
-- `docs/superpowers/specs/2026-06-05-iot-foundation-design.md` (casehub-iot) — IoT domain foundation
-- `docs/superpowers/specs/2026-06-05-life-layer9-home-automation.md` — home automation Layer 9
+- `docs/specs/2026-06-05-iot-foundation-design.md` (casehub-iot) — IoT domain foundation
+- `docs/specs/2026-06-05-life-layer9-home-automation.md` — home automation Layer 9
 
 ---
 
