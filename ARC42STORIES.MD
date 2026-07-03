@@ -473,7 +473,7 @@ This extends the HITL model established in C5 with a second, complementary patte
 - ✅ No re-entry with approval context — `ProvisionContext.withApproval()` / `DeprovisionContext.withApproval()` carry `PlanApproval`
 - ✅ No rejection fault type — `FaultType.APPROVAL_REJECTED` + `StepOutcome.Rejected`
 - ✅ SimpleTransitionExecutor had no approval awareness — full check/provision/record/acknowledge lifecycle integrated
-- 🔲 CaseTransitionExecutor silently swallows PendingApproval (#47) — blocked on casehubio/engine#590
+- ✅ CaseTransitionExecutor PendingApproval integration (#47) — CTE pre-filters approval-gated nodes, DesiredStateDispatch handles full lifecycle within workflow steps
 - 🔲 WorkItem-backed approval handler (work-adapter) — blocked on work#281/282
 
 **Layer Impact**
@@ -482,7 +482,7 @@ This extends the HITL model established in C5 with a second, complementary patte
 |---|---|
 | L1 Core API | Medium — PendingApprovalHandler SPI, ApprovalCheckResult, PlanApproval, sealed result variants, StepOutcome.Rejected, FaultType.APPROVAL_REJECTED, StepAction, context withApproval() |
 | L2 Runtime Engine | Medium — NoOpPendingApprovalHandler @DefaultBean, SimpleTransitionExecutor approval lifecycle |
-| L3 Engine Adapter | Medium — 🔲 CTE pre-filtering, DesiredStateDispatch with approval lifecycle (#47, blocked on engine#590) |
+| L3 Engine Adapter | Medium — ✅ CTE pre-filtering, DesiredStateDispatch with approval lifecycle (#47) |
 | L5 Testing | Low — MockPendingApprovalHandler |
 | L7 Work Adapter | Medium — 🔲 WorkItemPendingApprovalHandler (blocked on work#281/282) |
 
@@ -679,7 +679,7 @@ What this layer adds:
 - **Case-backed execution** — crash recovery (case resumes where it left off), OTel tracing per workflow step, visualization (case plan with task statuses)
 - **WorkItem routing** — `requiresHuman=true` nodes get `humanTask` bindings with `HumanTaskTarget.inline()`; the engine creates WorkItems automatically
 - **Parallel execution** — independent nodes at the same topological level execute as parallel `fork` branches in the generated workflow
-- 🔲 **Approval-gated provisioning (C8, #47)** — CTE pre-filters approval-gated nodes before building the case; `DesiredStateDispatch` registers for `desiredstate:dispatch` and handles the full PendingApproval lifecycle within workflow steps; `DesiredStateExecutionRegistry` passes graph+tenancyId context to the dispatch handler. Blocked on casehubio/engine#590 (`CallableDispatchRegistry`).
+- ✅ **Approval-gated provisioning (C8, #47)** — CTE pre-filters approval-gated nodes before building the case; `DesiredStateDispatch` registers for `desiredstate:dispatch` and handles the full PendingApproval lifecycle within workflow steps; `DesiredStateExecutionRegistry` passes graph+tenancyId context to the dispatch handler.
 
 Not closed here: L4 (tracing is on the runtime, not the adapter — the engine provides its own tracing).
 

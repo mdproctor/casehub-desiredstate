@@ -28,6 +28,7 @@
         <module>work-adapter</module>
         <module>examples/dungeon</module>
         <module>examples/pipeline</module>
+        <module>examples/spatial</module>
     </modules>
 
     <properties>
