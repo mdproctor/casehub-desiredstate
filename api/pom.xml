@@ -15,12 +15,16 @@
     <name>CaseHub Desired State :: API</name>
     <description>Core SPIs and domain types — GoalCompiler, ActualStateAdapter, NodeProvisioner,
         FaultPolicy, EventSource; DesiredStateGraph, DesiredNode, TransitionPlan, ReconciliationResult.
-        Pure Java, zero external dependencies except casehub-platform-api and Mutiny (provided).</description>
+        Pure Java dependencies: casehub-platform-api, casehub-ras-api. Mutiny and CDI annotations provided.</description>
 
     <dependencies>
         <dependency>
             <groupId>io.casehub</groupId>
             <artifactId>casehub-platform-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-ras-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.smallrye.reactive</groupId>
