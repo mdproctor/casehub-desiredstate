@@ -17,11 +17,11 @@ import java.util.Optional;
  * graph. The recompiler may:
  * <ul>
  *   <li>Return {@code Optional.empty()} — no replan needed, current graph still valid</li>
- *   <li>Return a new graph — replaces the current desired graph, triggering reconciliation</li>
+ *   <li>Return a new CompilationResult — replaces the current desired graph, triggering reconciliation</li>
  * </ul>
  *
- * <p>The runtime calls {@link ReconciliationLoop#updateDesired(String, DesiredStateGraph)}
- * with the new graph when present, canceling interval-grouped timers for removed node types
+ * <p>The runtime calls {@link io.casehub.desiredstate.runtime.LifecycleManager#updateDesired(String, CompilationResult)}
+ * with the new result when present, canceling interval-grouped timers for removed node types
  * and scheduling new ones for added types.
  *
  * <p>Invoked by {@code DesiredStateReplanDispatch} (engine-adapter) when RAS triggers
@@ -29,7 +29,7 @@ import java.util.Optional;
  *
  * @see io.casehub.ras.api.ActiveSituation
  * @see GoalCompiler
- * @see ReconciliationLoop#updateDesired(String, DesiredStateGraph)
+ * @see io.casehub.desiredstate.runtime.LifecycleManager#updateDesired(String, CompilationResult)
  */
 public interface SituationRecompiler {
 
@@ -39,7 +39,7 @@ public interface SituationRecompiler {
      * @param current   the current desired state graph
      * @param situation the active situation triggering replan
      * @param factory   graph factory for creating new graphs
-     * @return {@code Optional.empty()} if no replan needed, or a new graph to replace current
+     * @return {@code Optional.empty()} if no replan needed, or a new CompilationResult to replace current
      */
     Optional<CompilationResult> recompile(
         DesiredStateGraph current,

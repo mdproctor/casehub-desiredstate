@@ -6,7 +6,6 @@ import jakarta.inject.Inject;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 @ApplicationScoped

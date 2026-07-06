@@ -40,15 +40,16 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `engine-adapter/` | `casehub-desiredstate-engine` | `io.casehub.desiredstate.engine` | CaseTransitionExecutor — orchestration-tier bridge. Generates cases with Worker(Workflow) phases. DesiredStateDispatch registers `desiredstate:dispatch` via CallableDispatchRegistry (engine-flow) for workflow step execution with full PendingApproval lifecycle. DesiredStateReplanDispatch registers `desiredstate:replan` for RAS-triggered situation response via SituationRecompiler. CTE pre-filters approval-gated nodes before case creation. |
 | `work-adapter/` | `casehub-desiredstate-work` | `io.casehub.desiredstate.work` | WorkItem-backed HumanNodeHandler + PendingApprovalHandler — creates WorkItems for requiresHuman nodes and approval-gated nodes via WorkItemCreator SPI. |
 | `examples/dungeon/` | `casehub-desiredstate-example-dungeon` | `io.casehub.desiredstate.example.dungeon` | Nefarious Dungeons — teaching example implementing all SPIs with 2D tile visualizer. |
-| `examples/pipeline/` | `casehub-desiredstate-example-pipeline` | `io.casehub.desiredstate.example.pipeline` | Data Pipeline — teaching example with medallion architecture (Bronze/Silver/Gold), schema validation, three-tier fault escalation (retry → AI → human), pluggable `ExecutionBackend` strategy per processing stage. |
+| `examples/pipeline/` | `casehub-desiredstate-example-pipeline` | `io.casehub.desiredstate.example.pipeline` | Data Pipeline — teaching example with medallion architecture (Bronze/Silver/Gold), schema validation, three-tier fault escalation (retry → AI → human), pluggable `ExecutionBackend` strategy per processing stage. PendingApproval gates on Gold-tier nodes. |
 | `examples/spatial/` | `casehub-desiredstate-example-spatial` | `io.casehub.desiredstate.example.spatial` | Spatial/vector POC — 10x10 terrain grid, fog of war, three scenarios evaluating graph model with spatial state. Defense posture, attack waypoints, force distribution. |
+| `examples/expansion/` | `casehub-desiredstate-example-expansion` | `io.casehub.desiredstate.example.expansion` | Expansion — build-then-defend lifecycle teaching example with HTN planner, fault-triggered replanning via SituationRecompiler. |
 | `ras-adapter/` | `casehub-desiredstate-ras` | `io.casehub.desiredstate.ras` | RAS bridge — Ganglia for reconciliation patterns, situation definitions, correlation key extraction for zone-level aggregate detection. |
 
 ## Core SPIs (api/)
 
 | SPI | Signature | Domain responsibility |
 |-----|-----------|----------------------|
-| `GoalCompiler<G>` | `compile(G goals, DesiredStateGraphFactory) → DesiredStateGraph` | Translate goal declaration into node graph |
+| `GoalCompiler<G>` | `compile(G goals, DesiredStateGraphFactory) → CompilationResult` | Translate goal declaration into node graph or phase sequence |
 | `ActualStateAdapter` | `readActual(DesiredStateGraph, String tenancyId) → ActualState` | Read current reality from domain sources |
 | `NodeProvisioner` | `handledTypes() → Set<NodeType>` | Declare node types this provisioner handles (abstract — no default) |
 | `NodeProvisioner` | `resyncInterval() → Duration` | Declare resync interval for handled types (default: 5 minutes) |
@@ -62,7 +63,9 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `TransitionExecutor` | `execute(TransitionPlan, String tenancyId) → Uni<TransitionResult>` | Execute a transition plan (SPI'd — simple or case-backed) |
 | `HumanNodeHandler` | `onProvision(DesiredNode, ProvisionContext) → StepOutcome` | Handle requiresHuman nodes during provision |
 | `PendingApprovalHandler` | `check(DesiredNode, StepAction, String tenancyId) → ApprovalCheckResult` | Track approval lifecycle for provisioner-initiated PendingApproval requests |
-| `SituationRecompiler` | `recompile(DesiredStateGraph, ActiveSituation, DesiredStateGraphFactory) → Optional<DesiredStateGraph>` | Situation-driven graph recompilation — independent of GoalCompiler |
+| `SituationRecompiler` | `recompile(DesiredStateGraph, ActiveSituation, DesiredStateGraphFactory) → Optional<CompilationResult>` | Situation-driven graph recompilation — independent of GoalCompiler |
+| `ReconciliationListener` | `onReconciliationCycleCompleted(String tenancyId, DesiredStateGraph, ActualState)` | Post-cycle callback for lifecycle phase completion checks |
+| `CompletionCondition` | `isComplete(DesiredStateGraph, ActualState) → boolean` | Predicate for lifecycle phase completion |
 | `DesiredStateGraph` | query + mutation methods | SPI interface — graph backing store is pluggable |
 | `DesiredStateGraphFactory` | `empty()`, `of(nodes, deps)` | Creates graph instances |
 
@@ -70,6 +73,9 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 
 | Type | Purpose |
 |------|---------|
+| `CompilationResult` | Sealed — `SingleGraph(DesiredStateGraph)` \| `Lifecycle(List<Phase>)`. Returned by GoalCompiler.compile() |
+| `Phase` | `id`, `graph`, `completionCondition`. Successor sequence is list ordering |
+| `LifecycleManager` | `@ApplicationScoped` — orchestrates phase transitions via CAS. `start()`, `stop()`, `updateDesired()`, `compareAndSetDesired()` |
 | `DesiredNode` | `id`, `type`, `spec` (opaque domain payload), `requiresHuman` |
 | `NodeSpec` | Marker interface — domains implement with typed records |
 | `NodeId`, `NodeType`, `Dependency` | Value types for graph identity and edges |
