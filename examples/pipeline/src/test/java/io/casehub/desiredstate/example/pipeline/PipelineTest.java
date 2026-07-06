@@ -7,6 +7,7 @@ import io.casehub.desiredstate.runtime.NoOpHumanNodeHandler;
 import io.casehub.desiredstate.runtime.NoOpPendingApprovalHandler;
 import io.casehub.desiredstate.runtime.SimpleTransitionExecutor;
 import io.casehub.desiredstate.runtime.TransitionPlanner;
+import io.casehub.desiredstate.testing.MockPendingApprovalHandler;
 import io.casehub.platform.agent.*;
 import io.smallrye.mutiny.Multi;
 import org.junit.jupiter.api.BeforeEach;
@@ -692,5 +693,104 @@ class PipelineTest {
         PipelineWorld.ReviewEntry review = world.review(reviewNode);
         assertThat(review).isNotNull();
         assertThat(review.state()).isEqualTo(PipelineWorld.ReviewState.PENDING);
+    }
+
+    // --- Task 5: PendingApproval gate tests ---
+
+    @Test
+    void goldTierApproval_pendingThenApproved() {
+        PipelineBlueprint blueprint = PipelineBlueprint.builder()
+            .source("clickstream", "json", "kafka://clicks")
+            .schema("click-schema", List.of("userId", "pageUrl", "timestamp"), 1)
+            .ingestion("click-ingest", "clickstream", 1000, "json")
+            .cleanser("click-clean", List.of("deduplicate"), true, "DROP")
+            .enricher("geo-enrich", "geo-lookup", List.of("userId"), List.of("country"))
+            .validator("quality-gate", "click-schema", 0.95, true)
+            .transformer("session-agg", List.of("sessionize"), List.of("group-by-session"), "parquet", true)
+            .sink("warehouse", "s3://analytics/sessions", "parquet", List.of("date"))
+            .build();
+
+        DesiredStateGraph graph = ((CompilationResult.SingleGraph) compiler.compile(blueprint, factory)).graph();
+        world.registerLookupSource("geo-lookup", new PipelineWorld.LookupSourceEntry("geo-lookup"));
+
+        MockPendingApprovalHandler approvalHandler = new MockPendingApprovalHandler();
+        NodeProvisionerRouter router = new DefaultNodeProvisionerRouter(List.of(provisioner));
+        SimpleTransitionExecutor executor = new SimpleTransitionExecutor(
+            router, new NoOpHumanNodeHandler(), approvalHandler);
+
+        ActualState empty = new ActualState(Map.of());
+        TransitionPlan plan = planner.plan(graph, empty);
+        TransitionResult result = executor.execute(plan, "default").await().indefinitely();
+
+        // Transformer should be skipped (pending approval)
+        assertThat(result.outcomes().get(NodeId.of("session-agg")))
+            .isInstanceOf(StepOutcome.Skipped.class);
+        assertThat(approvalHandler.recorded).anyMatch(
+            r -> r.nodeId().equals(NodeId.of("session-agg"))
+                 && r.action() == StepAction.PROVISION);
+
+        // Program approval and re-execute
+        PlanApproval approval = new PlanApproval(
+            "gold-tier:session-agg", "admin", java.time.Instant.now());
+        approvalHandler.programCheck(NodeId.of("session-agg"), StepAction.PROVISION,
+            new ApprovalCheckResult.Approved(approval));
+
+        TransitionPlan replan = planner.plan(graph, adapter.readActual(graph, "default"));
+        TransitionResult reResult = executor.execute(replan, "default").await().indefinitely();
+
+        assertThat(reResult.outcomes().get(NodeId.of("session-agg")))
+            .isInstanceOf(StepOutcome.Succeeded.class);
+    }
+
+    @Test
+    void goldTierApproval_rejected() {
+        PipelineBlueprint blueprint = PipelineBlueprint.builder()
+            .source("clickstream", "json", "kafka://clicks")
+            .schema("click-schema", List.of("userId", "pageUrl", "timestamp"), 1)
+            .ingestion("click-ingest", "clickstream", 1000, "json")
+            .cleanser("click-clean", List.of("deduplicate"), true, "DROP")
+            .enricher("geo-enrich", "geo-lookup", List.of("userId"), List.of("country"))
+            .validator("quality-gate", "click-schema", 0.95, true)
+            .transformer("session-agg", List.of("sessionize"), List.of("group-by-session"), "parquet", true)
+            .sink("warehouse", "s3://analytics/sessions", "parquet", List.of("date"))
+            .build();
+
+        DesiredStateGraph graph = ((CompilationResult.SingleGraph) compiler.compile(blueprint, factory)).graph();
+        world.registerLookupSource("geo-lookup", new PipelineWorld.LookupSourceEntry("geo-lookup"));
+
+        MockPendingApprovalHandler approvalHandler = new MockPendingApprovalHandler();
+        // First call records pending, then program Rejected
+        approvalHandler.programCheck(NodeId.of("session-agg"), StepAction.PROVISION,
+            new ApprovalCheckResult.Rejected("gold-tier:session-agg", "Too expensive"));
+
+        NodeProvisionerRouter router = new DefaultNodeProvisionerRouter(List.of(provisioner));
+        SimpleTransitionExecutor executor = new SimpleTransitionExecutor(
+            router, new NoOpHumanNodeHandler(), approvalHandler);
+
+        ActualState empty = new ActualState(Map.of());
+        TransitionPlan plan = planner.plan(graph, empty);
+        TransitionResult result = executor.execute(plan, "default").await().indefinitely();
+
+        assertThat(result.outcomes().get(NodeId.of("session-agg")))
+            .isInstanceOf(StepOutcome.Rejected.class);
+        assertThat(approvalHandler.acknowledgedRejections).anyMatch(
+            r -> r.nodeId().equals(NodeId.of("session-agg")));
+    }
+
+    @Test
+    void goldTierApproval_defaultOff() {
+        PipelineBlueprint blueprint = standardBlueprint(); // no approvalRequired
+        DesiredStateGraph graph = ((CompilationResult.SingleGraph) compiler.compile(blueprint, factory)).graph();
+        world.registerLookupSource("geo-lookup", new PipelineWorld.LookupSourceEntry("geo-lookup"));
+
+        NodeProvisionerRouter router = new DefaultNodeProvisionerRouter(List.of(provisioner));
+        SimpleTransitionExecutor executor = new SimpleTransitionExecutor(
+            router, new NoOpHumanNodeHandler(), new NoOpPendingApprovalHandler());
+        TransitionResult result = executor.execute(planner.plan(graph, new ActualState(Map.of())),
+            "default").await().indefinitely();
+
+        // All nodes should succeed — no approval gate
+        assertThat(result.outcomes().get(NodeId.of("session-agg")))
+            .isInstanceOf(StepOutcome.Succeeded.class);
     }
 }
