@@ -30,6 +30,7 @@
         <module>examples/dungeon</module>
         <module>examples/pipeline</module>
         <module>examples/spatial</module>
+        <module>examples/expansion</module>
     </modules>
 
     <properties>
