@@ -97,8 +97,9 @@ C4Context
 
 | Pattern | Why chosen |
 |---|---|
-| SPI-driven architecture | Domains plug in without modifying the runtime; proven by two structurally distinct examples |
+| SPI-driven architecture | Domains plug in without modifying the runtime; proven by structurally distinct examples |
 | Immutable dependency graph | Concurrent reads during reconciliation without locks; versioned CAS for goal updates |
+| Lifecycle phase transitions | Multi-phase desired states (build→defend, bronze→silver→gold) without re-invoking GoalCompiler; `CompilationResult.Lifecycle` with `CompletionCondition` per phase |
 | Pruning before growing | Eliminates dangling dependencies and half-removed states |
 | Event-driven + periodic reconciliation | Events catch immediate drift; periodic re-sync catches silent drift |
 | CDI displacement (`@DefaultBean`) | SimpleTransitionExecutor is the default; CaseTransitionExecutor displaces it by classpath presence |
@@ -145,6 +146,7 @@ C4Container
   Container_Boundary(b2, "Layer: L2 Runtime Engine") {
     Container(planner, "TransitionPlanner", "Quarkus CDI", "Diffs desired vs actual, orders transitions")
     Container(loop, "ReconciliationLoop", "Quarkus CDI", "Event-driven + periodic re-sync per tenant")
+    Container(lifecycle, "LifecycleManager", "@ApplicationScoped", "Phase transitions via CAS, CompletionCondition evaluation")
     Container(fault, "FaultPolicyEngine", "Quarkus CDI", "Multi-policy composition with conflict detection")
     Container(simple, "SimpleTransitionExecutor", "@DefaultBean", "Sequential executor with PendingApproval lifecycle")
   }
@@ -166,6 +168,7 @@ C4Container
   Rel(planner, api_graph, "Reads desired graph")
   Rel(loop, planner, "Triggers plan")
   Rel(loop, api_exec, "Executes plan")
+  Rel(lifecycle, loop, "Manages phase transitions")
   Rel(simple, api_spis, "Calls NodeProvisioner + PendingApprovalHandler")
   Rel(case_exec, api_exec, "Implements TransitionExecutor")
   Rel(work_approval, api_spis, "Implements PendingApprovalHandler")
@@ -185,6 +188,7 @@ C4Container
 | examples/dungeon/ | casehub-desiredstate-example-dungeon | io.casehub.desiredstate.example.dungeon |
 | examples/pipeline/ | casehub-desiredstate-example-pipeline | io.casehub.desiredstate.example.pipeline |
 | examples/spatial/ | casehub-desiredstate-example-spatial | io.casehub.desiredstate.example.spatial |
+| examples/expansion/ | casehub-desiredstate-example-expansion | io.casehub.desiredstate.example.expansion |
 
 ---
 
@@ -210,6 +214,8 @@ C4Dynamic
 ```
 
 Two trigger paths into the reconciliation cycle: `EventSource.stream()` events (debounced, default 1s window) and periodic re-sync (default 5m interval, Vert.x timers). Both paths execute the same cycle above.
+
+**Lifecycle phase transitions:** When `CompilationResult.Lifecycle` is returned by `GoalCompiler`, `LifecycleManager` orchestrates phase-to-phase transitions. Each phase has a `CompletionCondition` evaluated via `ReconciliationListener` after every cycle. On completion, `LifecycleManager` uses `compareAndSetDesired()` to atomically advance to the next phase graph. Fault-triggered replanning via `SituationRecompiler` can return a new `CompilationResult.Lifecycle` — lifecycle state resets to the new sequence.
 
 ---
 
@@ -237,6 +243,7 @@ casehub-desiredstate is a library, not a standalone application. It deploys as M
 | Per-type reconciliation scheduling | Each `NodeType` gets its own resync interval from provisioner default or Preferences override; interval-grouped timers reconcile all types at the same frequency together |
 | Multi-tenancy | Per-tenant `ReconciliationLoop` instances; `ProvisionContext` carries `tenancyId` |
 | Approval lifecycle | Provisioner-initiated: `PendingApproval` → `PendingApprovalHandler.recordPending()` → reconciliation polls `check()` → Approved/Rejected → re-call provisioner with `PlanApproval` or fire `APPROVAL_REJECTED` fault |
+| Lifecycle phase transitions | `CompilationResult.Lifecycle` → `LifecycleManager` starts reconciliation on phase 1 graph with listener; after each cycle, listener evaluates `CompletionCondition`; on completion, `compareAndSetDesired()` atomically advances to next phase graph; fault-triggered replanning via `SituationRecompiler` can return new `CompilationResult.Lifecycle` → lifecycle state resets to new sequence |
 | CloudEvent emission (RAS bridge) | `ReconciliationEventEmitter` emits CloudEvents on cycle completion, per-node faults, drift, recovery; `DesiredStateEventTypes` defines type URIs; enables RAS aggregate detection via Ganglia |
 | Aggregate fault detection (RAS) | RAS Ganglia consumes CloudEvents, extracts correlation keys (`tenancyId`, `zone`), evaluates situation definitions; detects zone-level aggregate faults invisible to per-node FaultPolicy; triggers replan via dispatch |
 
@@ -262,7 +269,7 @@ casehub-desiredstate is a library, not a standalone application. It deploys as M
 
 | Journey | Description | Chapters | Status |
 |---|---|---|---|
-| Generic Desired-State Runtime | Build a domain-agnostic desired-state management system, prove genericity through distinct domains, evolve toward production capability | 8 | In progress |
+| Generic Desired-State Runtime | Build a domain-agnostic desired-state management system, prove genericity through distinct domains, evolve toward production capability | 9 | In progress |
 
 ```mermaid
 flowchart LR
@@ -273,6 +280,7 @@ flowchart LR
   C5 --> C6["C6: Pluggable Execution\nL6"]
   C6 --> C7["C7: Worker Foundation\nL1,L2,L6"]
   C5 --> C8["C8: Approval-Gated\nProvisioning\nL1,L2,L3,L5,L7"]
+  C8 --> C9["C9: Lifecycle Management\nL1,L2,L6"]
 
   style C1 fill:#90EE90,color:#000
   style C2 fill:#90EE90,color:#000
@@ -282,6 +290,7 @@ flowchart LR
   style C6 fill:#90EE90,color:#000
   style C7 fill:#FFD700,color:#000
   style C8 fill:#FFD700,color:#000
+  style C9 fill:#FFD700,color:#000
 ```
 
 ### §9.2 Chapter Index
@@ -296,18 +305,19 @@ flowchart LR
 | 6 | Pluggable Execution | Generic DSR | L6 | Medium | ✅ |
 | 7 | Worker Foundation | Generic DSR | L1, L2, L6 | Medium, Low, Low | 🚧 |
 | 8 | Approval-Gated Provisioning | Generic DSR | L1, L2, L3, L5, L7 | Medium, Medium, Medium, Low, Medium | 🚧 |
+| 9 | Lifecycle Management | Generic DSR | L1, L2, L6 | Medium, Medium, High | 🚧 |
 
 **Layer x Chapter matrix**
 
-| Layer | C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 |
-|---|---|---|---|---|---|---|---|---|
-| L1 Core API | High | — | — | — | — | — | Medium | Medium |
-| L2 Runtime Engine | High | Low | Low | — | — | — | Low | Medium |
-| L3 Engine Adapter | High | — | — | — | Medium | — | — | Medium |
-| L4 Observability | — | — | High | — | — | — | — | — |
-| L5 Testing | High | — | — | — | — | — | — | Low |
-| L6 Domain Examples | High | High | — | Medium | — | Medium | Low | — |
-| L7 Work Adapter | — | — | — | — | — | — | — | Medium |
+| Layer | C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 |
+|---|---|---|---|---|---|---|---|---|---|
+| L1 Core API | High | — | — | — | — | — | Medium | Medium | Medium |
+| L2 Runtime Engine | High | Low | Low | — | — | — | Low | Medium | Medium |
+| L3 Engine Adapter | High | — | — | — | Medium | — | — | Medium | — |
+| L4 Observability | — | — | High | — | — | — | — | — | — |
+| L5 Testing | High | — | — | — | — | — | — | Low | — |
+| L6 Domain Examples | High | High | — | Medium | — | Medium | Low | — | High |
+| L7 Work Adapter | — | — | — | — | — | — | — | Medium | — |
 
 L1 and L2 appear across multiple columns — they are foundational and bear cross-cutting responsibility. L6 has the most High entries — each new capability is validated through domain examples.
 
@@ -319,6 +329,7 @@ L1 and L2 appear across multiple columns — they are foundational and bear cros
 - C6 after C2: refactors the pipeline provisioner; requires a stable pipeline domain
 - C7 after C6: Worker foundation extraction builds on the execution model; depends on casehub-worker existing (cross-repo)
 - C8 after C5: approval-gated provisioning extends HITL from static `requiresHuman` flags to provisioner-initiated runtime approval; independent of C6/C7
+- C9 after C8: lifecycle management introduces multi-phase desired states; requires full reconciliation cycle and SituationRecompiler integration from C8/RAS
 
 ### §9.3 Chapter Entries
 
@@ -503,13 +514,13 @@ This extends the HITL model established in C5 with a second, complementary patte
 
 ### Layer — L1 Core API
 
-**Participates in chapters:** C1, C7, C8
+**Participates in chapters:** C1, C7, C8, C9
 **Architectural patterns:** SPI-driven architecture, immutable data structures, algebraic graph composition (Alga), sealed interfaces
 **Key protocols:** `casehub/garden: docs/protocols/universal/module-tier-structure.md`
-**Design refs:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md` §3–4, `docs/superpowers/specs/2026-06-28-pending-approval-handler-design.md`
-**Issues:** #1, #14
-**Navigation:** `git log --grep="#1" --oneline`
-**Completed:** 2026-06-14
+**Design refs:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md` §3–4, `docs/superpowers/specs/2026-06-28-pending-approval-handler-design.md`, `docs/specs/2026-06-30-lifecycle-management-design.md`
+**Issues:** #1, #14, #46
+**Navigation:** `git log --grep="#1\|#46" --oneline`
+**Completed:** 2026-06-14 (initial); evolved through C8 (approval), C9 (lifecycle)
 
 #### What it adds
 
@@ -519,8 +530,9 @@ This extends the HITL model established in C5 with a second, complementary patte
 What this layer adds:
 - **Immutable dependency graph** — dual adjacency maps (forward + reverse), cycle detection on every edge addition, CAS versioning; inspired by Clojure loom's adjacency-map pattern
 - **Algebraic composition** — `overlay()` (union) and `connect()` (all-leaves-to-all-roots) from Alga; enables compositional goal building without manual edge wiring
-- **Sealed result types** — `StepOutcome`, `ProvisionResult`, `DeprovisionResult`, `GraphMutation` are sealed interfaces; exhaustive `switch` at compile time
+- **Sealed result types** — `StepOutcome`, `ProvisionResult`, `DeprovisionResult`, `GraphMutation`, `CompilationResult` are sealed interfaces; exhaustive `switch` at compile time
 - **Approval lifecycle SPI (C8)** — `PendingApprovalHandler` with `check()`/`recordPending()`/`acknowledgeRejection()`; `ApprovalCheckResult` sealed (None/Pending/Approved/Rejected); `PlanApproval` record carried in `ProvisionContext`/`DeprovisionContext` via `withApproval()`; `ProvisionResult.PendingApproval`/`DeprovisionResult.PendingApproval` sealed variants; `StepOutcome.Rejected`; `FaultType.APPROVAL_REJECTED`; `StepAction` enum
+- **Lifecycle management SPI (C9)** — `CompilationResult` sealed: `SingleGraph(DesiredStateGraph)` | `Lifecycle(List<Phase>)`; `Phase` record: `id`, `graph`, `completionCondition`; `CompletionCondition` SPI with `allPresent()` and `never()` built-ins; `ReconciliationListener` SPI for post-cycle callbacks; `GoalCompiler.compile()` and `SituationRecompiler.recompile()` return `CompilationResult` instead of bare `DesiredStateGraph`
 
 Not closed here: L2 (no runtime yet), L3 (no engine bridge).
 
@@ -540,6 +552,10 @@ Not closed here: L2 (no runtime yet), L3 (no engine bridge).
 - `api/src/.../PendingApprovalHandler.java` — SPI: check/recordPending/acknowledgeRejection for approval lifecycle
 - `api/src/.../ApprovalCheckResult.java` — sealed: None, Pending, Approved, Rejected
 - `api/src/.../PlanApproval.java` — record: planReference, approvedBy, approvedAt — carried in provision/deprovision context on re-entry
+- `api/src/.../CompilationResult.java` — sealed: SingleGraph, Lifecycle — returned by GoalCompiler and SituationRecompiler
+- `api/src/.../Phase.java` — record: id, graph, completionCondition
+- `api/src/.../CompletionCondition.java` — SPI: isComplete(DesiredStateGraph, ActualState) → boolean; built-ins allPresent(), never()
+- `api/src/.../ReconciliationListener.java` — SPI: onReconciliationCycleCompleted(tenancyId, desired, actual) — post-cycle callback
 
 #### Key wiring
 
@@ -587,14 +603,14 @@ Immutable versioned graph with dual adjacency maps and algebraic composition.
 
 ### Layer — L2 Runtime Engine
 
-**Participates in chapters:** C1, C2, C3, C7, C8
-**Architectural patterns:** Event-driven reconciliation, topological sorting, CAS-based state management, CDI multi-bean composition
+**Participates in chapters:** C1, C2, C3, C7, C8, C9
+**Architectural patterns:** Event-driven reconciliation, topological sorting, CAS-based state management, CDI multi-bean composition, lifecycle orchestration
 **Key protocols:** `casehub/garden: docs/protocols/casehub/alternative-extension-patterns.md` (CDI displacement)
-**Design refs:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md` §5
-**Issues:** #1, #32, #33, #34, #35, #22
-**Navigation:** `git log --grep="#1\|#32\|#33\|#22" --oneline`
+**Design refs:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md` §5, `docs/specs/2026-06-30-lifecycle-management-design.md`
+**Issues:** #1, #32, #33, #34, #35, #22, #58
+**Navigation:** `git log --grep="#1\|#32\|#33\|#22\|#58" --oneline`
 **Blog:** `2026-06-16-mdp01-the-pipeline-that-broke-the-runtime`
-**Completed:** 2026-06-14 (initial); evolved through C2 (fixes) and C3 (tracing)
+**Completed:** 2026-06-14 (initial); evolved through C2 (fixes), C3 (tracing), C8 (approval), C9 (lifecycle)
 
 #### What it adds
 
@@ -603,10 +619,11 @@ Immutable versioned graph with dual adjacency maps and algebraic composition.
 
 What this layer adds:
 - **TransitionPlanner** — diffs desired graph against actual state, produces pruning-first ordered steps; topological sort via Kahn's algorithm
-- **ReconciliationLoop** — per-tenant, dual-trigger (events debounced at 1s + periodic at 5m), state machine (IDLE→DIFFING→PLANNING→EXECUTING→RECONCILED/FAULTED)
+- **ReconciliationLoop** — per-tenant, dual-trigger (events debounced at 1s + periodic at 5m), state machine (IDLE→DIFFING→PLANNING→EXECUTING→RECONCILED/FAULTED); new methods: `start(tenancyId, graph, listener)`, `setListener(tenancyId, listener)`, `compareAndSetDesired(tenancyId, expected, updated)`
 - **FaultPolicyEngine** — discovers all `FaultPolicy` beans via CDI `Instance<FaultPolicy>`, runs all matching, merges mutations, detects conflicts (`ConflictingMutationException`)
 - **SimpleTransitionExecutor** — `@DefaultBean`, walks removals then additions sequentially, delegates `requiresHuman` nodes to `HumanNodeHandler` SPI
 - **Approval lifecycle integration (C8)** — `SimpleTransitionExecutor` wraps every provisioner call with `PendingApprovalHandler`: check before (Pending→skip, Rejected→acknowledge+fault, Approved→withApproval context), record after (PendingApproval→recordPending). `NoOpPendingApprovalHandler @DefaultBean` returns Failed on `recordPending()` — misconfiguration signal when no handler is configured to create WorkItems.
+- **Lifecycle orchestration (C9)** — `LifecycleManager` @ApplicationScoped: `start(tenancyId, CompilationResult)` extracts phases or single graph, starts reconciliation with listener; listener evaluates `CompletionCondition` after each cycle; on completion, `compareAndSetDesired()` atomically advances to next phase; `stop(tenancyId)` tears down loop and clears state.
 
 Not closed here: L3 (no case-backed execution), L4 (no tracing until C3).
 
@@ -620,6 +637,7 @@ Not closed here: L3 (no case-backed execution), L4 (no tracing until C3).
 - `runtime/src/.../DefaultNodeProvisionerRouter.java` — builds routing table from all provisioners, validates resync intervals ≥1s, integrates Preferences overrides
 - `runtime/src/.../CdiNodeProvisionerRouter.java` — CDI wiring via `Instance<NodeProvisioner>`
 - `runtime/src/.../DesiredStatePreferenceKeys.java` — `RESYNC_INTERVAL` preference key with per-NodeType sub-key support
+- `runtime/src/.../LifecycleManager.java` — @ApplicationScoped phase orchestrator: start/stop/updateDesired, CAS-based phase transitions
 
 #### Key wiring
 
@@ -837,24 +855,25 @@ Not closed here: no test fixtures for engine-adapter (CaseTransitionExecutor tes
 
 ### Layer — L6 Domain Examples
 
-**Participates in chapters:** C1, C2, C4, C6
-**Architectural patterns:** Blueprint builder pattern (goal declarations), simulation world (in-memory domain state), three-tier fault escalation, strategy pattern (ExecutionBackend)
-**Design refs:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md` §9, `docs/superpowers/specs/2026-06-15-data-pipeline-example-design.md`, `docs/superpowers/specs/2026-06-17-pipeline-runtime-design.md`
-**Issues:** #1, #2, #28, #29, #31
-**Navigation:** `git log --grep="#1\|#2\|#28\|#29" --oneline -- examples/`
+**Participates in chapters:** C1, C2, C4, C6, C9
+**Architectural patterns:** Blueprint builder pattern (goal declarations), simulation world (in-memory domain state), three-tier fault escalation, strategy pattern (ExecutionBackend), HTN planning, lifecycle phases
+**Design refs:** `docs/superpowers/specs/2026-06-12-generic-runtime-design.md` §9, `docs/superpowers/specs/2026-06-15-data-pipeline-example-design.md`, `docs/superpowers/specs/2026-06-17-pipeline-runtime-design.md`, `docs/specs/2026-07-01-expansion-example-design.md`
+**Issues:** #1, #2, #28, #29, #31, #56
+**Navigation:** `git log --grep="#1\|#2\|#28\|#29\|#56" --oneline -- examples/`
 **Blog:** `2026-06-16-mdp01-the-pipeline-that-broke-the-runtime`, `2026-06-18-mdp01-the-toolbox-that-wasnt`
-**Completed:** 2026-06-14 (dungeon); 2026-06-18 (pipeline with ExecutionBackend)
+**Completed:** 2026-06-14 (dungeon); 2026-06-18 (pipeline with ExecutionBackend); 🔲 (expansion)
 
 #### What it adds
 
 **Before:** SPIs exist as interfaces — no proof they compose into a working system.
-**After:** Two structurally distinct domains validate every SPI contract: flat creature dependencies (Dungeon) vs layered medallion architecture (Pipeline), simple faults (hero raids) vs three-tier escalation (retry → AI → human).
+**After:** Structurally distinct domains validate every SPI contract: flat creature dependencies (Dungeon) vs layered medallion architecture (Pipeline) vs multi-phase build-defend lifecycle (Expansion), simple faults (hero raids) vs three-tier escalation (retry → AI → human) vs fault-triggered replanning (HTN).
 
 What this layer adds:
 - **Nefarious Dungeons** — flat dependency graph (rooms → creatures), hero raid fault policy, 2D tile visualizer (SSE + vanilla HTML/CSS/JS)
 - **Data Pipeline** — medallion architecture (Bronze/Silver/Gold), schema compatibility validation, three-tier fault escalation, deterministic AI review outcomes
 - **ExecutionBackend SPI** — pipeline-internal strategy for pluggable per-stage execution; `DefaultExecutionBackend` extracts existing logic; `AmbiguousBackendException` for fail-fast dispatch
 - **AgentProvider integration** — AI_REVIEW nodes invoke LLM via `casehub-platform-agent-api` when no pre-set outcome exists
+- 🔲 **Expansion** — HTN planner, two-phase lifecycle (construct → defend), `ConstructPhaseStrategy`, `DefensePhaseStrategy`, fault-triggered replanning via `SituationRecompiler`, `ExpansionGoalCompiler` returns `CompilationResult.Lifecycle`
 
 Not closed here: managed pipeline mode (#27 — in progress via C7), Camel/Drools backends (future ExecutionBackend implementations).
 
@@ -877,6 +896,15 @@ Not closed here: managed pipeline mode (#27 — in progress via C7), Camel/Drool
 - `examples/pipeline/src/.../ProvisionEscalationFaultPolicy.java` — PROVISION_FAILED: retry count → AI review → human escalation
 - `examples/pipeline/src/.../QuarantineFaultPolicy.java` — NODE_DEGRADED + VALIDATOR: quarantine → human review
 - `examples/pipeline/src/.../SchemaDriftFaultPolicy.java` — NODE_DEGRADED + SCHEMA: drift → human approval
+
+#### Key files — Expansion
+
+- 🔲 `examples/expansion/src/.../ExpansionGoalCompiler.java` — GoalCompiler: returns CompilationResult.Lifecycle with construct + defend phases
+- 🔲 `examples/expansion/src/.../ExpansionWorld.java` — in-memory simulation: territory grid, faction resources, threat detection
+- 🔲 `examples/expansion/src/.../ExpansionProvisioner.java` — provisions territory nodes, defense nodes, resource nodes
+- 🔲 `examples/expansion/src/.../ConstructPhaseStrategy.java` — HTN planner for construct phase: foundations → outposts → resource collectors
+- 🔲 `examples/expansion/src/.../DefensePhaseStrategy.java` — HTN planner for defense phase: turrets → shields → reinforcements
+- 🔲 `examples/expansion/src/.../ThreatResponseSituationRecompiler.java` — SituationRecompiler: triggers replan on aggregate threat detection, returns new CompilationResult.Lifecycle
 
 #### Key wiring
 
@@ -961,6 +989,31 @@ Not closed here: blocked on casehubio/work#281 (`WorkItemRef.payload` field for 
 
 ---
 
+### Chapter 9 — Lifecycle Management
+
+**Journey:** Generic DSR | **Sequence:** 9 of 9 | **Status:** 🚧
+**Delivered:** 🔲 | **Issues:** #46, #58, #56 | **Blog:** —
+
+**What this delivers**
+Multi-phase desired-state transitions without re-invoking `GoalCompiler`. Domains can declare a sequence of phases — each with a graph and completion condition. `LifecycleManager` orchestrates phase-to-phase transitions via CAS-based graph updates after each phase completes. Fault-triggered replanning via `SituationRecompiler` can return a new `CompilationResult.Lifecycle` — lifecycle state resets to the new sequence.
+
+**Accountability gaps closed**
+- ✅ GoalCompiler forced to model phases as explicit nodes — `CompilationResult.Lifecycle(List<Phase>)` alternative
+- ✅ No phase completion detection — `CompletionCondition` SPI with `allPresent()` and `never()` built-ins
+- ✅ No lifecycle orchestration — `LifecycleManager @ApplicationScoped` with CAS-based phase advancement
+- ✅ ReconciliationLoop had no completion callback hook — `ReconciliationListener` SPI
+- 🔲 No teaching example validating lifecycle — expansion example with HTN planner, build→defend phases
+
+**Layer Impact**
+
+| Layer | Delta |
+|---|---|
+| L1 Core API | Medium — `CompilationResult` sealed, `Phase` record, `CompletionCondition` SPI, `ReconciliationListener` SPI; `GoalCompiler.compile()` return type, `SituationRecompiler.recompile()` return type |
+| L2 Runtime Engine | Medium — `LifecycleManager @ApplicationScoped`, `ReconciliationLoop.setListener()`, `compareAndSetDesired()` |
+| L6 Domain Examples | High — expansion example with HTN planner, `ConstructPhaseStrategy`, `DefensePhaseStrategy`, fault-triggered replanning |
+
+---
+
 ## §10 Architectural Decisions
 
 No ADRs recorded yet. `docs/adr/` contains `.gitkeep` only. Architectural decisions are currently captured inline in layer entries (§9.4) and design specs (`docs/superpowers/specs/`).
@@ -1015,3 +1068,8 @@ No ADRs recorded yet. `docs/adr/` contains `.gitkeep` only. Architectural decisi
 | **CloudEvent emission** | ReconciliationLoop emits CloudEvents after each cycle: ReconciliationCompletedData (cycle summary), NodeFaultedData (per-node failures), NodeDriftedData (per-node drift), NodeRecoveredData (per-node recovery from DEGRADED to PRESENT) |
 | **DesiredStateEventTypes** | CloudEvent type URI constants for reconciliation events — enables RAS consumption and aggregate detection |
 | **RAS Ganglia** | Situation definitions registered with RAS for aggregate fault detection — consumes CloudEvents, extracts correlation keys, evaluates patterns invisible to per-node FaultPolicy |
+| **CompilationResult** | Sealed return type from GoalCompiler.compile() — either SingleGraph(DesiredStateGraph) for static desired state, or Lifecycle(List<Phase>) for multi-phase transitions |
+| **Phase** | Lifecycle element: id, graph, completionCondition. Successor sequence is list ordering. When a phase completes, LifecycleManager advances to the next phase graph via CAS |
+| **CompletionCondition** | Predicate evaluated after each reconciliation cycle to determine if the current phase is complete. Built-ins: allPresent() (all nodes in phase graph are PRESENT in actual state), never() (never complete — phase is terminal) |
+| **LifecycleManager** | Runtime orchestrator for phase transitions. Evaluates CompletionCondition via ReconciliationListener after each cycle; on completion, uses compareAndSetDesired() to atomically advance to the next phase |
+| **ReconciliationListener** | Callback hook invoked by ReconciliationLoop after each cycle completes. LifecycleManager uses this to evaluate CompletionCondition and trigger phase transitions |

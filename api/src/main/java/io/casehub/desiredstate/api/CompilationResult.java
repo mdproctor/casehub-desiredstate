@@ -10,7 +10,11 @@ public sealed interface CompilationResult {
         }
     }
 
-    record Lifecycle(List<Phase> phases) implements CompilationResult {}
+    record Lifecycle(List<Phase> phases) implements CompilationResult {
+        public Lifecycle {
+            java.util.Objects.requireNonNull(phases, "Phases must not be null");
+        }
+    }
 
     static CompilationResult single(DesiredStateGraph graph) {
         return new SingleGraph(graph);
