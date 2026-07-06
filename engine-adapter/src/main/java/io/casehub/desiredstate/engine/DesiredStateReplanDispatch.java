@@ -4,6 +4,7 @@ import io.casehub.desiredstate.api.CompilationResult;
 import io.casehub.desiredstate.api.DesiredStateGraph;
 import io.casehub.desiredstate.api.DesiredStateGraphFactory;
 import io.casehub.desiredstate.api.SituationRecompiler;
+import io.casehub.desiredstate.runtime.LifecycleManager;
 import io.casehub.desiredstate.runtime.ReconciliationLoop;
 import io.casehub.engine.flow.CallableDispatchRegistry;
 import io.casehub.ras.api.ActiveSituation;
@@ -27,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
  *   <li>Reads current desired graph via {@link ReconciliationLoop#getDesired(String)}</li>
  *   <li>Builds {@link ActiveSituation} from input</li>
  *   <li>Calls {@link SituationRecompiler#recompile(DesiredStateGraph, ActiveSituation, io.casehub.desiredstate.api.DesiredStateGraphFactory)}</li>
- *   <li>If recompiler returns a new graph, calls {@link ReconciliationLoop#updateDesired(String, DesiredStateGraph)}</li>
+ *   <li>If recompiler returns a new result, calls {@link LifecycleManager#updateDesired(String, CompilationResult)}</li>
  * </ol>
  *
  * <p>The recompiler may return {@code Optional.empty()}, signaling no replan needed.
@@ -36,6 +37,7 @@ import java.util.concurrent.CompletableFuture;
 @ApplicationScoped
 public class DesiredStateReplanDispatch {
 
+    private final LifecycleManager lifecycleManager;
     private final ReconciliationLoop reconciliationLoop;
     private final SituationRecompiler situationRecompiler;
     private final DesiredStateGraphFactory graphFactory;
@@ -43,10 +45,12 @@ public class DesiredStateReplanDispatch {
 
     @Inject
     public DesiredStateReplanDispatch(
+            LifecycleManager lifecycleManager,
             ReconciliationLoop reconciliationLoop,
             SituationRecompiler situationRecompiler,
             DesiredStateGraphFactory graphFactory,
             CallableDispatchRegistry callRegistry) {
+        this.lifecycleManager = lifecycleManager;
         this.reconciliationLoop = reconciliationLoop;
         this.situationRecompiler = situationRecompiler;
         this.graphFactory = graphFactory;
@@ -91,11 +95,7 @@ public class DesiredStateReplanDispatch {
             result.put("situationId", situationId);
 
             if (newResult.isPresent()) {
-                DesiredStateGraph newGraph = switch (newResult.get()) {
-                    case CompilationResult.SingleGraph sg -> sg.graph();
-                    case CompilationResult.Lifecycle lc -> lc.phases().getFirst().graph();
-                };
-                reconciliationLoop.updateDesired(tenancyId, newGraph);
+                lifecycleManager.updateDesired(tenancyId, newResult.get());
                 result.put("status", "REPLANNED");
             } else {
                 result.put("status", "NO_CHANGE");
