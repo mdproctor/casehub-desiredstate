@@ -109,7 +109,7 @@ public class PipelineGoalCompiler implements GoalCompiler<PipelineBlueprint> {
         for (PipelineBlueprint.TransformerEntry tx : goals.transformers()) {
             NodeId id = NodeId.of(tx.id());
             nodes.add(new DesiredNode(id, PipelineNodeTypes.TRANSFORMER,
-                new TransformerSpec(tx.aggregations(), tx.reshapeRules(), tx.outputFormat()), false));
+                new TransformerSpec(tx.aggregations(), tx.reshapeRules(), tx.outputFormat(), tx.approvalRequired()), false));
             transformerIds.add(id);
 
             // transformer depends on all validators
@@ -121,7 +121,7 @@ public class PipelineGoalCompiler implements GoalCompiler<PipelineBlueprint> {
         for (PipelineBlueprint.SinkEntry sink : goals.sinks()) {
             NodeId id = NodeId.of(sink.id());
             nodes.add(new DesiredNode(id, PipelineNodeTypes.SINK,
-                new SinkSpec(sink.destination(), sink.format(), sink.partitionKeys()), false));
+                new SinkSpec(sink.destination(), sink.format(), sink.partitionKeys(), sink.approvalRequired()), false));
 
             // sink depends on all transformers
             for (NodeId txId : transformerIds) {

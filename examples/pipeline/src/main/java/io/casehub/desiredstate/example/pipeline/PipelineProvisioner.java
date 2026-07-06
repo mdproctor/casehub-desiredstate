@@ -76,6 +76,13 @@ public class PipelineProvisioner implements NodeProvisioner {
     }
 
     private ProvisionResult dispatchToBackend(DesiredNode node, ProvisionContext context) {
+        if (node.spec() instanceof TransformerSpec ts && ts.approvalRequired() && !context.hasApproval()) {
+            return new ProvisionResult.PendingApproval(node.id(), "gold-tier:" + node.id().value());
+        }
+        if (node.spec() instanceof SinkSpec ss && ss.approvalRequired() && !context.hasApproval()) {
+            return new ProvisionResult.PendingApproval(node.id(), "gold-tier:" + node.id().value());
+        }
+
         List<ExecutionBackend> matching = backends.stream()
                 .filter(b -> b.handles(node))
                 .toList();

@@ -35,14 +35,16 @@ public class PipelineBlueprint {
 
     public record ValidatorEntry(String id, String schemaRef, double qualityThreshold, boolean anomalyDetection) {}
 
-    public record TransformerEntry(String id, List<String> aggregations, List<String> reshapeRules, String outputFormat) {
+    public record TransformerEntry(String id, List<String> aggregations, List<String> reshapeRules,
+                                   String outputFormat, boolean approvalRequired) {
         public TransformerEntry {
             aggregations = List.copyOf(aggregations);
             reshapeRules = List.copyOf(reshapeRules);
         }
     }
 
-    public record SinkEntry(String id, String destination, String format, List<String> partitionKeys) {
+    public record SinkEntry(String id, String destination, String format, List<String> partitionKeys,
+                            boolean approvalRequired) {
         public SinkEntry {
             partitionKeys = List.copyOf(partitionKeys);
         }
@@ -125,12 +127,22 @@ public class PipelineBlueprint {
         }
 
         public Builder transformer(String id, List<String> aggregations, List<String> reshapeRules, String outputFormat) {
-            transformers.add(new TransformerEntry(id, aggregations, reshapeRules, outputFormat));
+            return transformer(id, aggregations, reshapeRules, outputFormat, false);
+        }
+
+        public Builder transformer(String id, List<String> aggregations, List<String> reshapeRules,
+                                    String outputFormat, boolean approvalRequired) {
+            transformers.add(new TransformerEntry(id, aggregations, reshapeRules, outputFormat, approvalRequired));
             return this;
         }
 
         public Builder sink(String id, String destination, String format, List<String> partitionKeys) {
-            sinks.add(new SinkEntry(id, destination, format, partitionKeys));
+            return sink(id, destination, format, partitionKeys, false);
+        }
+
+        public Builder sink(String id, String destination, String format, List<String> partitionKeys,
+                            boolean approvalRequired) {
+            sinks.add(new SinkEntry(id, destination, format, partitionKeys, approvalRequired));
             return this;
         }
 
