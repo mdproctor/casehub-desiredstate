@@ -1,6 +1,7 @@
 package io.casehub.desiredstate.engine;
 
 import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.runtime.LifecycleManager;
 import io.casehub.desiredstate.runtime.ReconciliationLoop;
 import io.casehub.engine.flow.CallableDispatchRegistry;
 import io.casehub.ras.api.ActiveSituation;
@@ -18,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DesiredStateReplanDispatchTest {
 
+    private LifecycleManager mockLifecycleManager;
     private ReconciliationLoop mockLoop;
     private SituationRecompiler mockRecompiler;
     private DesiredStateGraphFactory mockFactory;
@@ -26,6 +28,7 @@ class DesiredStateReplanDispatchTest {
 
     private DesiredStateGraph currentGraph;
     private DesiredStateGraph newGraph;
+    private CompilationResult capturedResult;
 
     @BeforeEach
     void setUp() {
@@ -70,10 +73,18 @@ class DesiredStateReplanDispatchTest {
             }
         };
 
+        mockLifecycleManager = new LifecycleManager(mockLoop) {
+            @Override
+            public void updateDesired(String tenancyId, CompilationResult result) {
+                capturedResult = result;
+                super.updateDesired(tenancyId, result);
+            }
+        };
+
         mockRecompiler = (current, situation, factory) -> Optional.of(CompilationResult.single(newGraph));
 
         registry = new CallableDispatchRegistry();
-        dispatch = new DesiredStateReplanDispatch(mockLoop, mockRecompiler, mockFactory, registry);
+        dispatch = new DesiredStateReplanDispatch(mockLifecycleManager, mockLoop, mockRecompiler, mockFactory, registry);
         dispatch.register();
     }
 
@@ -99,13 +110,15 @@ class DesiredStateReplanDispatchTest {
 
         assertThat(result).containsEntry("status", "REPLANNED");
         assertThat(result).containsEntry("situationId", "sit-1");
+        assertThat(capturedResult).isNotNull();
+        assertThat(capturedResult).isInstanceOf(CompilationResult.SingleGraph.class);
         assertThat(currentGraph).isSameAs(newGraph);
     }
 
     @Test
     void shouldReturnNoChangeWhenRecompilerReturnsEmpty() throws Exception {
         SituationRecompiler emptyRecompiler = (current, situation, factory) -> Optional.empty();
-        dispatch = new DesiredStateReplanDispatch(mockLoop, emptyRecompiler, mockFactory, registry);
+        dispatch = new DesiredStateReplanDispatch(mockLifecycleManager, mockLoop, emptyRecompiler, mockFactory, registry);
 
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("tenancyId", "tenant-1");
