@@ -5,5 +5,14 @@ import io.casehub.desiredstate.api.NodeSpec;
 /**
  * Specification for a creature: species and level.
  */
-public record CreatureSpec(String species, int level) implements NodeSpec {
+public record CreatureSpec(String species, int level, boolean requiresHuman) implements NodeSpec {
+
+    public CreatureSpec(String species, int level) {
+        this(species, level, false);
+    }
+
+    @Override
+    public boolean requiresHuman() {
+        return requiresHuman;
+    }
 }

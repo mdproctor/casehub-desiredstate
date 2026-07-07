@@ -22,7 +22,7 @@ public class DesiredStateSituationDefinitionProvider implements SituationDefinit
                 Duration.ofMinutes(10),
                 null,
                 new ChainMode.Streak(NodeFaultGanglion.ID, 3),
-                new CaseTriggerConfig("desiredstate", "replan", "1.0", Map.of()),
+                new TriggerAction.CreateCase(new CaseTriggerConfig("desiredstate", "replan", "1.0", Map.of())),
                 new TriggerMode.FireOnce()),
             null));  // null = default extractor
 
@@ -35,7 +35,7 @@ public class DesiredStateSituationDefinitionProvider implements SituationDefinit
                 Duration.ofMinutes(15),
                 null,
                 new ChainMode.Count(PersistentDriftGanglion.ID, 3),
-                new CaseTriggerConfig("desiredstate", "escalate", "1.0", Map.of()),
+                new TriggerAction.CreateCase(new CaseTriggerConfig("desiredstate", "escalate", "1.0", Map.of())),
                 new TriggerMode.FireOnce()),
             null));
 
@@ -48,7 +48,7 @@ public class DesiredStateSituationDefinitionProvider implements SituationDefinit
                 Duration.ofMinutes(30),
                 null,
                 new ChainMode.Rate(Set.of(NodeFaultGanglion.ID), 0.6, 10),
-                new CaseTriggerConfig("desiredstate", "escalate", "1.0", Map.of()),
+                new TriggerAction.CreateCase(new CaseTriggerConfig("desiredstate", "escalate", "1.0", Map.of())),
                 new TriggerMode.Repeating(Duration.ofMinutes(5))),
             new DesiredStateCorrelationKeyExtractor()));
 

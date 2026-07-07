@@ -25,8 +25,8 @@ public class DungeonGoalCompiler implements GoalCompiler<DungeonBlueprint> {
         // Compile creatures
         for (DungeonBlueprint.CreatureEntry creature : goals.creatures()) {
             NodeId nodeId = NodeId.of(creature.id());
-            CreatureSpec spec = new CreatureSpec(creature.species(), creature.level());
-            nodes.add(new DesiredNode(nodeId, DungeonNodeTypes.CREATURE, spec, creature.requiresHuman()));
+            CreatureSpec spec = new CreatureSpec(creature.species(), creature.level(), creature.requiresHuman());
+            nodes.add(new DesiredNode(nodeId, DungeonNodeTypes.CREATURE, spec, false));
 
             // Add dependencies to rooms
             for (String roomDep : creature.roomDeps()) {

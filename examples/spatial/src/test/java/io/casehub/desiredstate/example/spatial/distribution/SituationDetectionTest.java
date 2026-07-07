@@ -80,9 +80,9 @@ class SituationDetectionTest {
         ganglion = new NodeFaultGanglion();
 
         // Situation definition: 3 consecutive node faults within 10 minutes
-        var triggerConfig = new CaseTriggerConfig(
+        var triggerAction = new TriggerAction.CreateCase(new CaseTriggerConfig(
             "desiredstate", "replan", "1.0",
-            Map.of("reason", "repeated-fault-pattern-detected"));
+            Map.of("reason", "repeated-fault-pattern-detected")));
 
         var situationDef = new SituationDefinition(
             "repeated-node-fault",
@@ -90,7 +90,7 @@ class SituationDetectionTest {
             Duration.ofMinutes(10), // correlation window
             null, // no buffer delay
             new ChainMode.Count(NodeFaultGanglion.ID, 3), // trigger after 3 detections
-            triggerConfig,
+            triggerAction,
             null // single-fire mode
         );
 
@@ -298,9 +298,9 @@ class SituationDetectionTest {
             Duration.ofMinutes(10),
             null,
             new ChainMode.Count(NodeFaultGanglion.ID, 3),
-            new CaseTriggerConfig(
+            new TriggerAction.CreateCase(new CaseTriggerConfig(
                 "desiredstate", "replan", "1.0",
-                Map.of("reason", "repeated-fault-pattern-detected")),
+                Map.of("reason", "repeated-fault-pattern-detected"))),
             null
         );
     }
