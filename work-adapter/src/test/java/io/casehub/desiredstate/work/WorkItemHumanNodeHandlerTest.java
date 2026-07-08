@@ -46,7 +46,7 @@ class WorkItemHumanNodeHandlerTest {
         assertThat(mockCreator.lastCreateRequest.title).isEqualTo("Provision: thermo-1");
         assertThat(mockCreator.lastCreateRequest.description)
             .isEqualTo("Human provisioning required for node thermo-1 (type: iot-device)");
-        assertThat(mockCreator.lastCreateRequest.category).isEqualTo("desiredstate-provision");
+        assertThat(mockCreator.lastCreateRequest.types).containsExactly("desiredstate-provision");
         assertThat(mockCreator.lastCreateRequest.callerRef)
             .isEqualTo("desiredstate:tenant1:thermo-1");
         assertThat(mockCreator.lastCreateRequest.priority).isEqualTo(WorkItemPriority.MEDIUM);
