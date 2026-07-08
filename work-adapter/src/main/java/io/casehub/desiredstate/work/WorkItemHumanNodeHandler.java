@@ -6,6 +6,7 @@ import io.casehub.work.api.spi.WorkItemCreator;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.util.List;
 import java.util.Optional;
 
 @ApplicationScoped
@@ -32,7 +33,7 @@ public class WorkItemHumanNodeHandler implements HumanNodeHandler {
             .title("Provision: " + node.id().value())
             .description("Human provisioning required for node "
                 + node.id().value() + " (type: " + node.type().value() + ")")
-            .category("desiredstate-provision")
+            .types(List.of("desiredstate-provision"))
             .callerRef(callerRef)
             .priority(WorkItemPriority.MEDIUM)
             .createdBy("desiredstate")
