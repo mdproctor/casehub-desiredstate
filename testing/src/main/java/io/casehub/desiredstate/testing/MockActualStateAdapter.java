@@ -5,9 +5,11 @@ import io.casehub.desiredstate.api.ActualStateAdapter;
 import io.casehub.desiredstate.api.DesiredStateGraph;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.NodeStatus;
+import io.casehub.desiredstate.api.NodeType;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -16,6 +18,16 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MockActualStateAdapter implements ActualStateAdapter {
 
     private final ConcurrentHashMap<NodeId, NodeStatus> statuses = new ConcurrentHashMap<>();
+    private Set<NodeType> handledTypes = Set.of();
+
+    @Override
+    public Set<NodeType> handledTypes() {
+        return handledTypes;
+    }
+
+    public void setHandledTypes(Set<NodeType> types) {
+        this.handledTypes = Set.copyOf(types);
+    }
 
     @Override
     public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
@@ -42,6 +54,7 @@ public class MockActualStateAdapter implements ActualStateAdapter {
      */
     public void clear() {
         statuses.clear();
+        handledTypes = Set.of();
     }
 
     /**

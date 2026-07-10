@@ -4,6 +4,7 @@ import io.casehub.desiredstate.api.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Reads the actual state from {@link DungeonWorld} and translates it to {@link ActualState}.
@@ -14,6 +15,11 @@ public class DungeonActualStateAdapter implements ActualStateAdapter {
 
     public DungeonActualStateAdapter(DungeonWorld world) {
         this.world = world;
+    }
+
+    @Override
+    public Set<NodeType> handledTypes() {
+        return Set.of(DungeonNodeTypes.ROOM, DungeonNodeTypes.CREATURE, DungeonNodeTypes.TRAP);
     }
 
     @Override

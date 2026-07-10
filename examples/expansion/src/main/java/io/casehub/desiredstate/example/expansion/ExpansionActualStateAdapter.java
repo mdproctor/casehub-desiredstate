@@ -4,6 +4,7 @@ import io.casehub.desiredstate.api.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Reads the actual state of the expansion world from {@link ExpansionWorld}.
@@ -16,6 +17,16 @@ public class ExpansionActualStateAdapter implements ActualStateAdapter {
 
     public ExpansionActualStateAdapter(ExpansionWorld world) {
         this.world = world;
+    }
+
+    @Override
+    public Set<NodeType> handledTypes() {
+        return Set.of(
+            ExpansionNodeTypes.PROBE, ExpansionNodeTypes.NEXUS,
+            ExpansionNodeTypes.PYLON, ExpansionNodeTypes.CANNON,
+            ExpansionNodeTypes.PATROL, ExpansionNodeTypes.MONITOR,
+            ExpansionNodeTypes.RESPONSE
+        );
     }
 
     @Override
