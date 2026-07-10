@@ -58,8 +58,9 @@ class ReconciliationTracingTest {
         faultEngine = new FaultPolicyEngine(List.of());
         testEventSource = new TestEventSource();
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-                planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+                planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
                 TEST_DEBOUNCE, TEST_RESYNC);
     }
 
@@ -129,8 +130,9 @@ class ReconciliationTracingTest {
         var router = new DefaultNodeProvisionerRouter(List.of(new SucceedingProvisioner()));
         SimpleTransitionExecutor simpleExecutor = new SimpleTransitionExecutor(
                 router, new NoOpHumanNodeHandler(), new NoOpPendingApprovalHandler());
+        var adapterRouterLocal = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         ReconciliationLoop loopWithSimple = new ReconciliationLoop(
-                planner, simpleExecutor, actualAdapter, faultEngine, testEventSource,
+                planner, simpleExecutor, adapterRouterLocal, faultEngine, testEventSource::stream,
                 TEST_DEBOUNCE, TEST_RESYNC);
 
         loopWithSimple.start("test-tenant", desired);
@@ -164,8 +166,9 @@ class ReconciliationTracingTest {
         var router = new DefaultNodeProvisionerRouter(List.of(new FailingProvisioner()));
         SimpleTransitionExecutor simpleExecutor = new SimpleTransitionExecutor(
                 router, new NoOpHumanNodeHandler(), new NoOpPendingApprovalHandler());
+        var adapterRouterLocal = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         ReconciliationLoop loopWithSimple = new ReconciliationLoop(
-                planner, simpleExecutor, actualAdapter, faultEngine, testEventSource,
+                planner, simpleExecutor, adapterRouterLocal, faultEngine, testEventSource::stream,
                 TEST_DEBOUNCE, TEST_RESYNC);
 
         loopWithSimple.start("test-tenant", desired);
@@ -194,8 +197,9 @@ class ReconciliationTracingTest {
         var router = new DefaultNodeProvisionerRouter(List.of(new SucceedingProvisioner()));
         SimpleTransitionExecutor simpleExecutor = new SimpleTransitionExecutor(
                 router, new NoOpHumanNodeHandler(), new NoOpPendingApprovalHandler());
+        var adapterRouterLocal = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         ReconciliationLoop loopWithSimple = new ReconciliationLoop(
-                planner, simpleExecutor, actualAdapter, faultEngine, testEventSource,
+                planner, simpleExecutor, adapterRouterLocal, faultEngine, testEventSource::stream,
                 TEST_DEBOUNCE, TEST_RESYNC);
 
         loopWithSimple.start("test-tenant", desired);
@@ -225,8 +229,9 @@ class ReconciliationTracingTest {
 
         FaultPolicy noopPolicy = (event, current, actual) -> List.of();
         faultEngine = new FaultPolicyEngine(List.of(noopPolicy));
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-                planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+                planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
                 TEST_DEBOUNCE, TEST_RESYNC);
 
         loop.start("test-tenant", desired);
@@ -275,8 +280,9 @@ class ReconciliationTracingTest {
 
         FaultPolicy noopPolicy = (event, current, actual) -> List.of();
         faultEngine = new FaultPolicyEngine(List.of(noopPolicy));
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-                planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+                planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
                 TEST_DEBOUNCE, TEST_RESYNC);
 
         loop.start("test-tenant", desired);
@@ -307,6 +313,9 @@ class ReconciliationTracingTest {
         void setStatuses(Map<NodeId, NodeStatus> statuses) {
             this.statuses = Map.copyOf(statuses);
         }
+
+        @Override
+        public Set<NodeType> handledTypes() { return Set.of(NodeType.of("test")); }
 
         @Override
         public ActualState readActual(DesiredStateGraph desired, String tenancyId) {

@@ -44,8 +44,9 @@ class ReconciliationLoopCloudEventTest {
         capturedEvents = new CopyOnWriteArrayList<>();
 
         Consumer<CloudEvent> eventSink = capturedEvents::add;
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
             TEST_DEBOUNCE, TEST_RESYNC, eventSink);
     }
 
@@ -250,6 +251,11 @@ class ReconciliationLoopCloudEventTest {
 
         void setStatuses(Map<NodeId, NodeStatus> statuses) {
             this.statuses = Map.copyOf(statuses);
+        }
+
+        @Override
+        public Set<NodeType> handledTypes() {
+            return Set.of(NodeType.of("test"));
         }
 
         @Override

@@ -25,8 +25,9 @@ class LifecycleManagerTest {
     void setUp() {
         adapter = new TrackingActualStateAdapter();
         factory = new DefaultDesiredStateGraphFactory();
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(adapter));
         loop = new ReconciliationLoop(
-            new TransitionPlanner(), new ImmediateSuccessExecutor(), adapter,
+            new TransitionPlanner(), new ImmediateSuccessExecutor(), adapterRouter,
             new FaultPolicyEngine(List.of()),
             () -> Multi.createFrom().nothing(),
             Duration.ofMillis(50), Duration.ofMillis(200));
@@ -116,6 +117,8 @@ class LifecycleManagerTest {
         private final Map<NodeId, NodeStatus> statuses = new HashMap<>();
         void makePresent(NodeId id) { statuses.put(id, NodeStatus.PRESENT); }
         void makeAbsent(NodeId id) { statuses.put(id, NodeStatus.ABSENT); }
+        @Override
+        public Set<NodeType> handledTypes() { return Set.of(NodeType.of("t")); }
         @Override
         public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
             return new ActualState(Map.copyOf(statuses));

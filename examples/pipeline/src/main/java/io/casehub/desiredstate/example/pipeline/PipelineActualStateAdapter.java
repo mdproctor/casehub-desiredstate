@@ -4,6 +4,7 @@ import io.casehub.desiredstate.api.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Reads the actual state of the pipeline from {@link PipelineWorld}.
@@ -16,6 +17,17 @@ public class PipelineActualStateAdapter implements ActualStateAdapter {
 
     public PipelineActualStateAdapter(PipelineWorld world) {
         this.world = world;
+    }
+
+    @Override
+    public Set<NodeType> handledTypes() {
+        return Set.of(
+            PipelineNodeTypes.DATA_SOURCE, PipelineNodeTypes.SCHEMA,
+            PipelineNodeTypes.INGESTION, PipelineNodeTypes.CLEANSER,
+            PipelineNodeTypes.ENRICHER, PipelineNodeTypes.VALIDATOR,
+            PipelineNodeTypes.TRANSFORMER, PipelineNodeTypes.SINK,
+            PipelineNodeTypes.AI_REVIEW, PipelineNodeTypes.HUMAN_REVIEW
+        );
     }
 
     @Override

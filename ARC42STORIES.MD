@@ -240,6 +240,8 @@ casehub-desiredstate is a library, not a standalone application. It deploys as M
 | CDI displacement | `casehub/garden: docs/protocols/casehub/alternative-extension-patterns.md` |
 | SPI placement | Pure Java in api/; CDI implementations in runtime/ |
 | Multi-provisioner dispatch | `NodeProvisionerRouter` routes by `NodeType` using `handledTypes()` declarations; `DefaultNodeProvisionerRouter` validates at construction (fail-fast on overlaps, invalid intervals) |
+| Multi-domain actual state routing | `ActualStateAdapterRouter` routes `readActual()` by `NodeType` using adapter `handledTypes()` declarations; always calls all adapters (orphan detection for deprovision); `DesiredStateGraph.filterByTypes()` shared by router and interval-grouped scheduling |
+| Multi-domain event composition | `MergedEventSource` composes multiple domain `EventSource` streams via `Multi.merge()` with per-stream error isolation (retry + recover); single-source optimisation bypasses retry wrapping |
 | Per-type reconciliation scheduling | Each `NodeType` gets its own resync interval from provisioner default or Preferences override; interval-grouped timers reconcile all types at the same frequency together |
 | Multi-tenancy | Per-tenant `ReconciliationLoop` instances; `ProvisionContext` carries `tenancyId` |
 | Approval lifecycle | Provisioner-initiated: `PendingApproval` → `PendingApprovalHandler.recordPending()` → reconciliation polls `check()` → Approved/Rejected → re-call provisioner with `PlanApproval` or fire `APPROVAL_REJECTED` fault |
@@ -545,6 +547,9 @@ Not closed here: L2 (no runtime yet), L3 (no engine bridge).
 - `api/src/.../NodeProvisioner.java` — SPI: provision/deprovision a single node, declare handled types via `handledTypes()`, declare resync interval via `resyncInterval()`
 - `api/src/.../NodeProvisionerRouter.java` — SPI interface: routes provision/deprovision calls by NodeType, resolves effective resync interval per type
 - `api/src/.../FaultPolicy.java` — SPI: onFault(FaultEvent, DesiredStateGraph, ActualState) returns List<GraphMutation> in response to FaultEvent (with actual state visibility)
+- `api/src/.../ActualStateAdapter.java` — SPI: reads actual state from domain sources, declares handled types via `handledTypes()`
+- `api/src/.../ActualStateAdapterRouter.java` — SPI interface: routes readActual calls by NodeType, reports all handled types
+- `api/src/.../MergedEventSource.java` — consumer-facing interface: composed event stream from multiple domain EventSource beans
 - `api/src/.../EventSource.java` — SPI: streams Multi<StateEvent> for event-driven reconciliation
 - `api/src/.../TransitionExecutor.java` — SPI: executes a TransitionPlan, returns Uni<TransitionResult>
 - `api/src/.../GraphMutation.java` — sealed: AddNode, RemoveNode, UpdateNode, AddDependency, RemoveDependency
@@ -636,6 +641,10 @@ Not closed here: L3 (no case-backed execution), L4 (no tracing until C3).
 - `runtime/src/.../SimpleTransitionExecutor.java` — @DefaultBean sequential executor, routes via NodeProvisionerRouter
 - `runtime/src/.../DefaultNodeProvisionerRouter.java` — builds routing table from all provisioners, validates resync intervals ≥1s, integrates Preferences overrides
 - `runtime/src/.../CdiNodeProvisionerRouter.java` — CDI wiring via `Instance<NodeProvisioner>`
+- `runtime/src/.../DefaultActualStateAdapterRouter.java` — builds routing table from all adapters, dispatches readActual by NodeType, merges results; always calls all adapters for orphan detection
+- `runtime/src/.../CdiActualStateAdapterRouter.java` — CDI wiring via `Instance<ActualStateAdapter>`
+- `runtime/src/.../DefaultMergedEventSource.java` — merges multiple EventSource streams with per-stream error isolation (retry + recover)
+- `runtime/src/.../CdiMergedEventSource.java` — CDI wiring via `Instance<EventSource>`
 - `runtime/src/.../DesiredStatePreferenceKeys.java` — `RESYNC_INTERVAL` preference key with per-NodeType sub-key support
 - `runtime/src/.../LifecycleManager.java` — @ApplicationScoped phase orchestrator: start/stop/updateDesired, CAS-based phase transitions
 

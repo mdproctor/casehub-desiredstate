@@ -19,4 +19,14 @@ public interface DesiredStateGraph {
     DesiredStateGraph withMutation(GraphMutation mutation);
     DesiredStateGraph overlay(DesiredStateGraph other);
     DesiredStateGraph connect(DesiredStateGraph other);
+
+    default DesiredStateGraph filterByTypes(Set<NodeType> types) {
+        DesiredStateGraph result = this;
+        for (Map.Entry<NodeId, DesiredNode> entry : nodes().entrySet()) {
+            if (!types.contains(entry.getValue().type())) {
+                result = result.withoutNode(entry.getKey());
+            }
+        }
+        return result;
+    }
 }

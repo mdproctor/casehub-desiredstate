@@ -42,7 +42,15 @@ class SpiContractTest {
     }
 
     @Test void actualStateAdapter_canBeImplemented() {
-        ActualStateAdapter adapter = (desired, tenancyId) -> new ActualState(Map.of());
+        ActualStateAdapter adapter = new ActualStateAdapter() {
+            @Override public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
+                return new ActualState(Map.of());
+            }
+            @Override public Set<NodeType> handledTypes() {
+                return Set.of(NodeType.of("test-type"));
+            }
+        };
+        assertThat(adapter.handledTypes()).containsExactly(NodeType.of("test-type"));
         assertThat(adapter.readActual(null, "test-tenant")).isNotNull();
     }
 
@@ -73,6 +81,11 @@ class SpiContractTest {
     @Test void eventSource_canBeImplemented() {
         EventSource source = () -> Multi.createFrom().empty();
         assertThat(source.stream()).isNotNull();
+    }
+
+    @Test void mergedEventSource_canBeImplemented() {
+        MergedEventSource merged = () -> Multi.createFrom().empty();
+        assertThat(merged.stream()).isNotNull();
     }
 
     @Test void transitionExecutor_canBeImplemented() {

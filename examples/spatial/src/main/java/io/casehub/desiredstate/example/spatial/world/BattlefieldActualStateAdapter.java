@@ -4,12 +4,19 @@ import io.casehub.desiredstate.api.*;
 import io.casehub.desiredstate.example.spatial.specs.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public class BattlefieldActualStateAdapter implements ActualStateAdapter {
     private final BattlefieldWorld world;
 
     public BattlefieldActualStateAdapter(BattlefieldWorld world) {
         this.world = world;
+    }
+
+    @Override
+    public Set<NodeType> handledTypes() {
+        return Set.of(SpatialNodeTypes.CELL, SpatialNodeTypes.UNIT,
+                      SpatialNodeTypes.SCOUT, SpatialNodeTypes.ZONE);
     }
 
     @Override

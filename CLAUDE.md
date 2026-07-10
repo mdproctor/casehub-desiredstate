@@ -51,6 +51,10 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 |-----|-----------|----------------------|
 | `GoalCompiler<G>` | `compile(G goals, DesiredStateGraphFactory) → CompilationResult` | Translate goal declaration into node graph or phase sequence |
 | `ActualStateAdapter` | `readActual(DesiredStateGraph, String tenancyId) → ActualState` | Read current reality from domain sources |
+| `ActualStateAdapter` | `handledTypes() → Set<NodeType>` | Declare node types this adapter handles (abstract — no default) |
+| `ActualStateAdapterRouter` | `readActual(DesiredStateGraph, String tenancyId) → ActualState` | Route readActual calls to the correct adapter by NodeType |
+| `ActualStateAdapterRouter` | `allHandledTypes() → Set<NodeType>` | Get all node types handled by registered adapters |
+| `MergedEventSource` | `stream() → Multi<StateEvent>` | Composed event stream from multiple domain EventSource beans |
 | `NodeProvisioner` | `handledTypes() → Set<NodeType>` | Declare node types this provisioner handles (abstract — no default) |
 | `NodeProvisioner` | `resyncInterval() → Duration` | Declare resync interval for handled types (default: 5 minutes) |
 | `NodeProvisioner` | `provision(DesiredNode, ProvisionContext) → ProvisionResult` | Create/update a single node |
@@ -66,7 +70,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `SituationRecompiler` | `recompile(DesiredStateGraph, ActiveSituation, DesiredStateGraphFactory) → Optional<CompilationResult>` | Situation-driven graph recompilation — independent of GoalCompiler |
 | `ReconciliationListener` | `onReconciliationCycleCompleted(String tenancyId, DesiredStateGraph, ActualState)` | Post-cycle callback for lifecycle phase completion checks |
 | `CompletionCondition` | `isComplete(DesiredStateGraph, ActualState) → boolean` | Predicate for lifecycle phase completion |
-| `DesiredStateGraph` | query + mutation methods | SPI interface — graph backing store is pluggable |
+| `DesiredStateGraph` | query + mutation + `filterByTypes(Set<NodeType>)` methods | SPI interface — graph backing store is pluggable. `filterByTypes` is a default method using subtractive approach via `withoutNode()` |
 | `DesiredStateGraphFactory` | `empty()`, `of(nodes, deps)` | Creates graph instances |
 
 ## Core Runtime Types
@@ -93,6 +97,10 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `StepOutcome` | Sealed — Succeeded / Failed(reason) / Skipped(reason) / Rejected(reason) |
 | `DefaultNodeProvisionerRouter` | Runtime implementation of NodeProvisionerRouter — builds routing table from all provisioners, validates resync intervals, integrates Preferences overrides |
 | `CdiNodeProvisionerRouter` | CDI-wired subclass injecting `Instance<NodeProvisioner>` and `PreferenceProvider` |
+| `DefaultActualStateAdapterRouter` | Runtime implementation of ActualStateAdapterRouter — builds routing table from all adapters, dispatches readActual by NodeType, merges results |
+| `CdiActualStateAdapterRouter` | CDI-wired subclass injecting `Instance<ActualStateAdapter>` |
+| `DefaultMergedEventSource` | Runtime implementation of MergedEventSource — merges multiple EventSource streams with per-stream error isolation |
+| `CdiMergedEventSource` | CDI-wired subclass injecting `Instance<EventSource>` |
 | `DesiredStatePreferenceKeys` | Preference key definitions — `RESYNC_INTERVAL` with per-NodeType sub-key support |
 | `ReconciliationCompletedData` | CloudEvent data — cycle summary |
 | `NodeFaultedData` | CloudEvent data — per-node fault |

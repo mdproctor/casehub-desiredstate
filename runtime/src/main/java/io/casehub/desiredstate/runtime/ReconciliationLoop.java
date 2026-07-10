@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  * {@link ConcurrentHashMap}. Two trigger paths feed into the same reconcile cycle:
  *
  * <ol>
- *   <li><b>Event-driven:</b> subscribes to {@link EventSource#stream()} and debounces
+ *   <li><b>Event-driven:</b> subscribes to {@link MergedEventSource#stream()} and debounces
  *       events within a configurable window, batching rapid-fire events into a single
  *       full-graph reconciliation cycle.</li>
  *   <li><b>Periodic re-sync:</b> interval-grouped timers derived from
@@ -68,9 +68,9 @@ public class ReconciliationLoop {
 
     private final TransitionPlanner planner;
     private final TransitionExecutor executor;
-    private final ActualStateAdapter actualStateAdapter;
+    private final ActualStateAdapterRouter actualStateAdapterRouter;
     private final FaultPolicyEngine faultPolicyEngine;
-    private final EventSource eventSource;
+    private final MergedEventSource mergedEventSource;
     private final NodeProvisionerRouter router;
     private final Duration debounceWindow;
     private final Duration resyncOverride;
@@ -87,12 +87,12 @@ public class ReconciliationLoop {
     public ReconciliationLoop(
             TransitionPlanner planner,
             TransitionExecutor executor,
-            ActualStateAdapter actualStateAdapter,
+            ActualStateAdapterRouter actualStateAdapterRouter,
             FaultPolicyEngine faultPolicyEngine,
-            EventSource eventSource,
+            MergedEventSource mergedEventSource,
             NodeProvisionerRouter router,
             Event<CloudEvent> cloudEventSink) {
-        this(planner, executor, actualStateAdapter, faultPolicyEngine, eventSource,
+        this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
              router, DEFAULT_DEBOUNCE, null, cloudEventSink::fire);
     }
 
@@ -103,12 +103,12 @@ public class ReconciliationLoop {
     public ReconciliationLoop(
             TransitionPlanner planner,
             TransitionExecutor executor,
-            ActualStateAdapter actualStateAdapter,
+            ActualStateAdapterRouter actualStateAdapterRouter,
             FaultPolicyEngine faultPolicyEngine,
-            EventSource eventSource,
+            MergedEventSource mergedEventSource,
             NodeProvisionerRouter router,
             Duration debounceWindow) {
-        this(planner, executor, actualStateAdapter, faultPolicyEngine, eventSource,
+        this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
              router, debounceWindow, null, null);
     }
 
@@ -120,12 +120,12 @@ public class ReconciliationLoop {
     public ReconciliationLoop(
             TransitionPlanner planner,
             TransitionExecutor executor,
-            ActualStateAdapter actualStateAdapter,
+            ActualStateAdapterRouter actualStateAdapterRouter,
             FaultPolicyEngine faultPolicyEngine,
-            EventSource eventSource,
+            MergedEventSource mergedEventSource,
             Duration debounceWindow,
             Duration resyncInterval) {
-        this(planner, executor, actualStateAdapter, faultPolicyEngine, eventSource,
+        this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
              null, debounceWindow, resyncInterval, null);
     }
 
@@ -135,26 +135,23 @@ public class ReconciliationLoop {
     public ReconciliationLoop(
             TransitionPlanner planner,
             TransitionExecutor executor,
-            ActualStateAdapter actualStateAdapter,
+            ActualStateAdapterRouter actualStateAdapterRouter,
             FaultPolicyEngine faultPolicyEngine,
-            EventSource eventSource,
+            MergedEventSource mergedEventSource,
             Duration debounceWindow,
             Duration resyncInterval,
             Consumer<CloudEvent> cloudEventSink) {
-        this(planner, executor, actualStateAdapter, faultPolicyEngine, eventSource,
+        this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
              null, debounceWindow, resyncInterval, cloudEventSink);
     }
 
-    /**
-     * CDI constructor with default timers and no router. Kept for backward compatibility.
-     */
     public ReconciliationLoop(
             TransitionPlanner planner,
             TransitionExecutor executor,
-            ActualStateAdapter actualStateAdapter,
+            ActualStateAdapterRouter actualStateAdapterRouter,
             FaultPolicyEngine faultPolicyEngine,
-            EventSource eventSource) {
-        this(planner, executor, actualStateAdapter, faultPolicyEngine, eventSource,
+            MergedEventSource mergedEventSource) {
+        this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
              null, DEFAULT_DEBOUNCE, DEFAULT_RESYNC, null);
     }
 
@@ -169,18 +166,18 @@ public class ReconciliationLoop {
     private ReconciliationLoop(
             TransitionPlanner planner,
             TransitionExecutor executor,
-            ActualStateAdapter actualStateAdapter,
+            ActualStateAdapterRouter actualStateAdapterRouter,
             FaultPolicyEngine faultPolicyEngine,
-            EventSource eventSource,
+            MergedEventSource mergedEventSource,
             NodeProvisionerRouter router,
             Duration debounceWindow,
             Duration resyncOverride,
             Consumer<CloudEvent> cloudEventSink) {
         this.planner = planner;
         this.executor = executor;
-        this.actualStateAdapter = actualStateAdapter;
+        this.actualStateAdapterRouter = actualStateAdapterRouter;
         this.faultPolicyEngine = faultPolicyEngine;
-        this.eventSource = eventSource;
+        this.mergedEventSource = mergedEventSource;
         this.router = router;
         this.debounceWindow = debounceWindow;
         this.resyncOverride = resyncOverride;
@@ -376,26 +373,6 @@ public class ReconciliationLoop {
     }
 
     /**
-     * Builds a filtered graph containing only nodes whose type is in the target set,
-     * plus dependencies between those nodes.
-     */
-    private DesiredStateGraph filterGraph(DesiredStateGraph full, Set<NodeType> types) {
-        DesiredStateGraph filtered = ImmutableDesiredStateGraph.empty();
-        for (DesiredNode node : full.nodes().values()) {
-            if (types.contains(node.type())) {
-                filtered = filtered.withNode(node);
-            }
-        }
-        // Add dependencies where both endpoints are in the filtered graph
-        for (Dependency dep : full.dependencies()) {
-            if (filtered.nodes().containsKey(dep.from()) && filtered.nodes().containsKey(dep.to())) {
-                filtered = filtered.withDependency(dep);
-            }
-        }
-        return filtered;
-    }
-
-    /**
      * Internal per-tenant reconciliation loop.
      */
     private class TenantLoop {
@@ -430,7 +407,7 @@ public class ReconciliationLoop {
             reconcile();
 
             // Event-driven: subscribe with debounce
-            eventSubscription = eventSource.stream()
+            eventSubscription = mergedEventSource.stream()
                 .group().intoLists().every(debounceWindow)
                 .filter(batch -> !batch.isEmpty())
                 .subscribe().with(
@@ -595,7 +572,7 @@ public class ReconciliationLoop {
                     .startSpan();
             try (Scope ignored = reconcileSpan.makeCurrent()) {
                 DesiredStateGraph fullDesired = desiredRef.get();
-                DesiredStateGraph filteredDesired = filterGraph(fullDesired, types);
+                DesiredStateGraph filteredDesired = fullDesired.filterByTypes(types);
 
                 if (filteredDesired.isEmpty()) {
                     return;
@@ -639,7 +616,7 @@ public class ReconciliationLoop {
         private ActualState readActual(DesiredStateGraph desired, String tenancyId) {
             Span span = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME).spanBuilder("readActual").startSpan();
             try (Scope ignored = span.makeCurrent()) {
-                ActualState actual = actualStateAdapter.readActual(desired, tenancyId);
+                ActualState actual = actualStateAdapterRouter.readActual(desired, tenancyId);
                 span.setAttribute(AttributeKey.longKey("desiredstate.node.count"),
                         actual.statuses().size());
                 return actual;

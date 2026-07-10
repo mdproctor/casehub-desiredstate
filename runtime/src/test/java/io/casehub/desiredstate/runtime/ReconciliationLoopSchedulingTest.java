@@ -32,7 +32,7 @@ class ReconciliationLoopSchedulingTest {
     void fastTypeReconciliesMoreOftenThanSlowType() throws Exception {
         var fastCount = new AtomicInteger(0);
         var slowCount = new AtomicInteger(0);
-        var fastLatch = new CountDownLatch(3); // wait for 3 fast-type cycles
+        var fastLatch = new CountDownLatch(3);
 
         var fastProv = new MockNodeProvisioner();
         fastProv.setHandledTypes(Set.of(FAST_TYPE));
@@ -44,17 +44,21 @@ class ReconciliationLoopSchedulingTest {
 
         var router = new DefaultNodeProvisionerRouter(List.of(fastProv, slowProv));
 
-        ActualStateAdapter adapter = (desired, tenancyId) -> {
-            for (DesiredNode node : desired.nodes().values()) {
-                if (node.type().equals(FAST_TYPE)) {
-                    fastCount.incrementAndGet();
-                    fastLatch.countDown();
+        ActualStateAdapter adapter = new ActualStateAdapter() {
+            @Override public Set<NodeType> handledTypes() { return Set.of(FAST_TYPE, SLOW_TYPE); }
+            @Override public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
+                for (DesiredNode node : desired.nodes().values()) {
+                    if (node.type().equals(FAST_TYPE)) {
+                        fastCount.incrementAndGet();
+                        fastLatch.countDown();
+                    }
+                    if (node.type().equals(SLOW_TYPE)) slowCount.incrementAndGet();
                 }
-                if (node.type().equals(SLOW_TYPE)) slowCount.incrementAndGet();
+                return new ActualState(Map.of());
             }
-            return new ActualState(Map.of());
         };
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(adapter));
         var factory = new DefaultDesiredStateGraphFactory();
         var graph = factory.of(
             List.of(
@@ -67,9 +71,9 @@ class ReconciliationLoopSchedulingTest {
         loop = new ReconciliationLoop(
             new TransitionPlanner(),
             new ReconciliationLoopTest.TestTransitionExecutor(),
-            adapter,
+            adapterRouter,
             new FaultPolicyEngine(List.of()),
-            new ReconciliationLoopTest.TestEventSource(),
+            new ReconciliationLoopTest.TestEventSource()::stream,
             router,
             Duration.ofMillis(50)
         );
@@ -83,19 +87,20 @@ class ReconciliationLoopSchedulingTest {
 
     @Test
     void reconcileTypesFiltersGraphToTargetTypes() throws Exception {
-        // When a type-filtered reconciliation fires, only nodes of the target type
-        // should be visible to the ActualStateAdapter.
         var nodesSeenByAdapter = new java.util.concurrent.CopyOnWriteArrayList<Set<NodeType>>();
-        var latch = new CountDownLatch(2); // initial full + at least one typed cycle
+        var latch = new CountDownLatch(2);
 
-        ActualStateAdapter adapter = (desired, tenancyId) -> {
-            Set<NodeType> types = new java.util.HashSet<>();
-            for (DesiredNode node : desired.nodes().values()) {
-                types.add(node.type());
+        ActualStateAdapter adapter = new ActualStateAdapter() {
+            @Override public Set<NodeType> handledTypes() { return Set.of(FAST_TYPE, SLOW_TYPE); }
+            @Override public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
+                Set<NodeType> types = new java.util.HashSet<>();
+                for (DesiredNode node : desired.nodes().values()) {
+                    types.add(node.type());
+                }
+                nodesSeenByAdapter.add(types);
+                latch.countDown();
+                return new ActualState(Map.of());
             }
-            nodesSeenByAdapter.add(types);
-            latch.countDown();
-            return new ActualState(Map.of());
         };
 
         var prov = new MockNodeProvisioner();
@@ -104,9 +109,10 @@ class ReconciliationLoopSchedulingTest {
 
         var slowProv = new MockNodeProvisioner();
         slowProv.setHandledTypes(Set.of(SLOW_TYPE));
-        slowProv.setResyncInterval(Duration.ofHours(1)); // effectively never fires
+        slowProv.setResyncInterval(Duration.ofHours(1));
 
         var router = new DefaultNodeProvisionerRouter(List.of(prov, slowProv));
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(adapter));
 
         var factory = new DefaultDesiredStateGraphFactory();
         var graph = factory.of(
@@ -120,9 +126,9 @@ class ReconciliationLoopSchedulingTest {
         loop = new ReconciliationLoop(
             new TransitionPlanner(),
             new ReconciliationLoopTest.TestTransitionExecutor(),
-            adapter,
+            adapterRouter,
             new FaultPolicyEngine(List.of()),
-            new ReconciliationLoopTest.TestEventSource(),
+            new ReconciliationLoopTest.TestEventSource()::stream,
             router,
             Duration.ofMillis(50)
         );
@@ -131,8 +137,6 @@ class ReconciliationLoopSchedulingTest {
 
         assertTrue(latch.await(5, TimeUnit.SECONDS));
 
-        // After the initial full-graph reconcile, subsequent fast-type cycles
-        // should only see FAST_TYPE nodes
         boolean hasFilteredCycle = nodesSeenByAdapter.stream()
             .anyMatch(types -> types.equals(Set.of(FAST_TYPE)));
         assertTrue(hasFilteredCycle,
@@ -155,16 +159,20 @@ class ReconciliationLoopSchedulingTest {
 
         var router = new DefaultNodeProvisionerRouter(List.of(fastProv, newProv));
 
-        ActualStateAdapter adapter = (desired, tenancyId) -> {
-            for (DesiredNode node : desired.nodes().values()) {
-                if (node.type().equals(newType)) {
-                    newTypeCount.incrementAndGet();
-                    newTypeLatch.countDown();
+        ActualStateAdapter adapter = new ActualStateAdapter() {
+            @Override public Set<NodeType> handledTypes() { return Set.of(FAST_TYPE, newType); }
+            @Override public ActualState readActual(DesiredStateGraph desired, String tenancyId) {
+                for (DesiredNode node : desired.nodes().values()) {
+                    if (node.type().equals(newType)) {
+                        newTypeCount.incrementAndGet();
+                        newTypeLatch.countDown();
+                    }
                 }
+                return new ActualState(Map.of());
             }
-            return new ActualState(Map.of());
         };
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(adapter));
         var factory = new DefaultDesiredStateGraphFactory();
         var initialGraph = factory.of(
             List.of(new DesiredNode(NodeId.of("f1"), FAST_TYPE, new TestSpec("f"), false)),
@@ -174,16 +182,15 @@ class ReconciliationLoopSchedulingTest {
         loop = new ReconciliationLoop(
             new TransitionPlanner(),
             new ReconciliationLoopTest.TestTransitionExecutor(),
-            adapter,
+            adapterRouter,
             new FaultPolicyEngine(List.of()),
-            new ReconciliationLoopTest.TestEventSource(),
+            new ReconciliationLoopTest.TestEventSource()::stream,
             router,
             Duration.ofMillis(50)
         );
 
         loop.start("tenant-1", initialGraph);
 
-        // Update desired to include the new type
         var updatedGraph = factory.of(
             List.of(
                 new DesiredNode(NodeId.of("f1"), FAST_TYPE, new TestSpec("f"), false),

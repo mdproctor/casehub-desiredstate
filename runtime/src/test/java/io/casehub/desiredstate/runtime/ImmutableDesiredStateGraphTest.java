@@ -532,4 +532,37 @@ class ImmutableDesiredStateGraphTest {
         var g2 = g.withoutDependency(dep("A", "B"));
         assertThat(g2.version()).isEqualTo(v + 1);
     }
+
+    @Test void filterByTypes_retainsMatchingNodesAndInternalDeps() {
+        var graph = ImmutableDesiredStateGraph.empty()
+            .withNode(node("n1", ROOM))
+            .withNode(node("n2", ROOM))
+            .withNode(node("n3", CREATURE))
+            .withDependency(new Dependency(NodeId.of("n2"), NodeId.of("n1")))
+            .withDependency(new Dependency(NodeId.of("n3"), NodeId.of("n1")));
+
+        var filtered = graph.filterByTypes(Set.of(ROOM));
+
+        assertThat(filtered.nodes()).containsOnlyKeys(NodeId.of("n1"), NodeId.of("n2"));
+        assertThat(filtered.dependencies()).containsExactly(
+            new Dependency(NodeId.of("n2"), NodeId.of("n1")));
+    }
+
+    @Test void filterByTypes_emptySetProducesEmptyGraph() {
+        var graph = ImmutableDesiredStateGraph.empty().withNode(node("n1", ROOM));
+
+        var filtered = graph.filterByTypes(Set.of());
+        assertThat(filtered.isEmpty()).isTrue();
+    }
+
+    @Test void filterByTypes_allTypesRetainsFullGraph() {
+        var graph = ImmutableDesiredStateGraph.empty()
+            .withNode(node("n1", ROOM))
+            .withNode(node("n2", ROOM))
+            .withDependency(new Dependency(NodeId.of("n2"), NodeId.of("n1")));
+
+        var filtered = graph.filterByTypes(Set.of(ROOM));
+        assertThat(filtered.nodes()).hasSize(2);
+        assertThat(filtered.dependencies()).hasSize(1);
+    }
 }

@@ -40,8 +40,9 @@ class ReconciliationLoopTest {
         faultEngine = new FaultPolicyEngine(List.of());
         testEventSource = new TestEventSource();
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
             TEST_DEBOUNCE, TEST_RESYNC);
     }
 
@@ -185,8 +186,9 @@ class ReconciliationLoopTest {
         };
         faultEngine = new FaultPolicyEngine(List.of(addReplacementPolicy));
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
             TEST_DEBOUNCE, TEST_RESYNC);
 
         loop.start("test-tenant", desired);
@@ -229,8 +231,9 @@ class ReconciliationLoopTest {
         };
         faultEngine = new FaultPolicyEngine(List.of(capturingPolicy));
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
             TEST_DEBOUNCE, TEST_RESYNC);
 
         loop.start("test-tenant", desired);
@@ -264,8 +267,9 @@ class ReconciliationLoopTest {
         };
         faultEngine = new FaultPolicyEngine(List.of(addFixPolicy));
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
             TEST_DEBOUNCE, TEST_RESYNC);
 
         // "a" is DRIFTED — planner will re-provision "a" and provision "a-fix" (UNKNOWN → addition)
@@ -299,8 +303,9 @@ class ReconciliationLoopTest {
         };
         faultEngine = new FaultPolicyEngine(List.of(capturingPolicy));
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
             TEST_DEBOUNCE, TEST_RESYNC);
 
         loop.start("test-tenant", desired);
@@ -334,8 +339,9 @@ class ReconciliationLoopTest {
         };
         faultEngine = new FaultPolicyEngine(List.of(capturingPolicy));
 
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
-            planner, testExecutor, actualAdapter, faultEngine, testEventSource,
+            planner, testExecutor, adapterRouter, faultEngine, testEventSource::stream,
             TEST_DEBOUNCE, TEST_RESYNC);
 
         loop.start("test-tenant", desired);
@@ -365,9 +371,19 @@ class ReconciliationLoopTest {
      */
     static class TestActualStateAdapter implements ActualStateAdapter {
         private volatile Map<NodeId, NodeStatus> statuses = Map.of();
+        private Set<NodeType> handledTypes = Set.of(NodeType.of("test"));
 
         void setStatuses(Map<NodeId, NodeStatus> statuses) {
             this.statuses = Map.copyOf(statuses);
+        }
+
+        void setHandledTypes(Set<NodeType> types) {
+            this.handledTypes = Set.copyOf(types);
+        }
+
+        @Override
+        public Set<NodeType> handledTypes() {
+            return handledTypes;
         }
 
         @Override
