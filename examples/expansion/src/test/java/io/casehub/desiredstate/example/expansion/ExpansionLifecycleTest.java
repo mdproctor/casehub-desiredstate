@@ -138,7 +138,7 @@ class ExpansionLifecycleTest {
             Map.of("failedNode", "nexus"), Instant.now(), Instant.now(), 5);
 
         Optional<CompilationResult> replanned = recompiler.recompile(
-            buildGraph, situation, factory);
+            buildGraph, new ActualState(Map.of()), situation, factory);
 
         assertThat(replanned).isPresent();
         // Replanned result should have FORTIFY defense posture

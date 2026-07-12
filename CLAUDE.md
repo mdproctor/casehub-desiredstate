@@ -35,9 +35,9 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | Module | Artifact | Root package | Purpose |
 |--------|----------|-------------|---------|
 | `api/` | `casehub-desiredstate-api` | `io.casehub.desiredstate.api` | Core SPIs + domain types. Pure Java, Mutiny provided, CDI annotations provided. |
-| `runtime/` | `casehub-desiredstate` | `io.casehub.desiredstate.runtime` | TransitionPlanner, ReconciliationLoop, FaultPolicyEngine, ImmutableDesiredStateGraph, SimpleTransitionExecutor, DefaultNodeProvisionerRouter, CdiNodeProvisionerRouter, DesiredStatePreferenceKeys. Multi-provisioner dispatch and per-type reconciliation scheduling. Quarkus library. |
+| `runtime/` | `casehub-desiredstate` | `io.casehub.desiredstate.runtime` | TransitionPlanner, ReconciliationLoop, FaultPolicyEngine, ImmutableDesiredStateGraph, SimpleTransitionExecutor, DefaultNodeProvisionerRouter, CdiNodeProvisionerRouter, DesiredStatePreferenceKeys, SituationRecompilerEngine, CbrFaultPolicy, CbrSituationRecompiler, GraphDiff. Multi-provisioner dispatch, per-type reconciliation scheduling, and CBR chain. Quarkus library. |
 | `testing/` | `casehub-desiredstate-testing` | `io.casehub.desiredstate.testing` | Mock SPIs and test fixtures. **Test scope only.** |
-| `engine-adapter/` | `casehub-desiredstate-engine` | `io.casehub.desiredstate.engine` | CaseTransitionExecutor — orchestration-tier bridge. Generates cases with Worker(Workflow) phases. DesiredStateDispatch registers `desiredstate:dispatch` via CallableDispatchRegistry (engine-flow) for workflow step execution with full PendingApproval lifecycle. DesiredStateReplanDispatch registers `desiredstate:replan` for RAS-triggered situation response via SituationRecompiler. CTE pre-filters approval-gated nodes before case creation. |
+| `engine-adapter/` | `casehub-desiredstate-engine` | `io.casehub.desiredstate.engine` | CaseTransitionExecutor — orchestration-tier bridge. Generates cases with Worker(Workflow) phases. DesiredStateDispatch registers `desiredstate:dispatch` via CallableDispatchRegistry (engine-flow) for workflow step execution with full PendingApproval lifecycle. DesiredStateReplanDispatch registers `desiredstate:replan` for RAS-triggered situation response via SituationRecompilerEngine (reads ActualState via ActualStateAdapterRouter). CTE pre-filters approval-gated nodes before case creation. |
 | `work-adapter/` | `casehub-desiredstate-work` | `io.casehub.desiredstate.work` | WorkItem-backed HumanNodeHandler + PendingApprovalHandler — creates WorkItems for requiresHuman nodes and approval-gated nodes via WorkItemCreator SPI. |
 | `examples/dungeon/` | `casehub-desiredstate-example-dungeon` | `io.casehub.desiredstate.example.dungeon` | Nefarious Dungeons — teaching example implementing all SPIs with 2D tile visualizer. |
 | `examples/pipeline/` | `casehub-desiredstate-example-pipeline` | `io.casehub.desiredstate.example.pipeline` | Data Pipeline — teaching example with medallion architecture (Bronze/Silver/Gold), schema validation, three-tier fault escalation (retry → AI → human), pluggable `ExecutionBackend` strategy per processing stage. PendingApproval gates on Gold-tier nodes. |
@@ -67,7 +67,9 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `TransitionExecutor` | `execute(TransitionPlan, String tenancyId) → Uni<TransitionResult>` | Execute a transition plan (SPI'd — simple or case-backed) |
 | `HumanNodeHandler` | `onProvision(DesiredNode, ProvisionContext) → StepOutcome` | Handle requiresHuman nodes during provision |
 | `PendingApprovalHandler` | `check(DesiredNode, StepAction, String tenancyId) → ApprovalCheckResult` | Track approval lifecycle for provisioner-initiated PendingApproval requests |
-| `SituationRecompiler` | `recompile(DesiredStateGraph, ActiveSituation, DesiredStateGraphFactory) → Optional<CompilationResult>` | Situation-driven graph recompilation — independent of GoalCompiler |
+| `SituationRecompiler` | `recompile(DesiredStateGraph, ActualState, ActiveSituation, DesiredStateGraphFactory) → Optional<CompilationResult>` | Situation-driven graph recompilation — independent of GoalCompiler. `priority()` default method for chain ordering |
+| `ConfigurationRetriever` | `retrieve(RetrievalContext, int maxResults) → List<RetrievedConfiguration>` | CBR Retrieve — find similar past configurations by fault/situation context |
+| `ConfigurationAdapter` | `adapt(RetrievedConfiguration, RetrievalContext) → Optional<AdaptedConfiguration>` | CBR Reuse — adapt retrieved configuration to current context |
 | `ReconciliationListener` | `onReconciliationCycleCompleted(String tenancyId, DesiredStateGraph, ActualState)` | Post-cycle callback for lifecycle phase completion checks |
 | `CompletionCondition` | `isComplete(DesiredStateGraph, ActualState) → boolean` | Predicate for lifecycle phase completion |
 | `DesiredStateGraph` | query + mutation + `filterByTypes(Set<NodeType>)` methods | SPI interface — graph backing store is pluggable. `filterByTypes` is a default method using subtractive approach via `withoutNode()` |
@@ -101,7 +103,15 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `CdiActualStateAdapterRouter` | CDI-wired subclass injecting `Instance<ActualStateAdapter>` |
 | `DefaultMergedEventSource` | Runtime implementation of MergedEventSource — merges multiple EventSource streams with per-stream error isolation |
 | `CdiMergedEventSource` | CDI-wired subclass injecting `Instance<EventSource>` |
-| `DesiredStatePreferenceKeys` | Preference key definitions — `RESYNC_INTERVAL` with per-NodeType sub-key support |
+| `DesiredStatePreferenceKeys` | Preference key definitions — `RESYNC_INTERVAL` with per-NodeType sub-key support, `CBR_MIN_RETRIEVAL_CONFIDENCE`, `CBR_MIN_ADAPTATION_CONFIDENCE`, `CBR_MAX_CANDIDATES` |
+| `RetrievalContext` | CBR context — `currentGraph`, `actualState`, `faultEvent` or `situation`. Factory methods: `forFault()`, `forSituation()` |
+| `RetrievedConfiguration` | Past configuration that worked — `graph`, `confidence`, `sourceId`, `metadata` |
+| `AdaptedConfiguration` | Adapted configuration — `graph`, `confidence`, `sourceId` |
+| `CbrConfiguration` | CBR thresholds — `minimumRetrievalConfidence`, `minimumAdaptationConfidence`, `maxCandidates` |
+| `CbrFaultPolicy` | `@ApplicationScoped` FaultPolicy — CBR retrieve → adapt → diff chain for per-node mutations |
+| `CbrSituationRecompiler` | `@ApplicationScoped` SituationRecompiler — CBR retrieve → adapt → CompilationResult for whole-graph replacement. `priority() = Integer.MAX_VALUE` (fallback) |
+| `SituationRecompilerEngine` | `@ApplicationScoped` — chain-of-responsibility aggregation of SituationRecompiler beans by priority |
+| `GraphDiff` | Package-private utility — diffs adapted graph fragment against current to produce `List<GraphMutation>`. Scope by NodeType |
 | `ReconciliationCompletedData` | CloudEvent data — cycle summary |
 | `NodeFaultedData` | CloudEvent data — per-node fault |
 | `NodeDriftedData` | CloudEvent data — per-node drift |

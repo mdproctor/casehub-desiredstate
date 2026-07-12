@@ -3,6 +3,7 @@ package io.casehub.desiredstate.engine;
 import io.casehub.desiredstate.api.*;
 import io.casehub.desiredstate.runtime.LifecycleManager;
 import io.casehub.desiredstate.runtime.ReconciliationLoop;
+import io.casehub.desiredstate.runtime.SituationRecompilerEngine;
 import io.casehub.engine.flow.CallableDispatchRegistry;
 import io.casehub.ras.api.ActiveSituation;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,10 +82,16 @@ class DesiredStateReplanDispatchTest {
             }
         };
 
-        mockRecompiler = (current, situation, factory) -> Optional.of(CompilationResult.single(newGraph));
+        mockRecompiler = (current, actual, situation, factory) -> Optional.of(CompilationResult.single(newGraph));
+        SituationRecompilerEngine engine = new SituationRecompilerEngine(java.util.List.of(mockRecompiler));
+
+        ActualStateAdapterRouter stubRouter = new ActualStateAdapterRouter() {
+            @Override public ActualState readActual(DesiredStateGraph desired, String tenancyId) { return new ActualState(Map.of()); }
+            @Override public java.util.Set<NodeType> allHandledTypes() { return java.util.Set.of(); }
+        };
 
         registry = new CallableDispatchRegistry();
-        dispatch = new DesiredStateReplanDispatch(mockLifecycleManager, mockLoop, mockRecompiler, mockFactory, registry);
+        dispatch = new DesiredStateReplanDispatch(mockLifecycleManager, mockLoop, engine, mockFactory, registry, stubRouter);
         dispatch.register();
     }
 
@@ -117,8 +124,13 @@ class DesiredStateReplanDispatchTest {
 
     @Test
     void shouldReturnNoChangeWhenRecompilerReturnsEmpty() throws Exception {
-        SituationRecompiler emptyRecompiler = (current, situation, factory) -> Optional.empty();
-        dispatch = new DesiredStateReplanDispatch(mockLifecycleManager, mockLoop, emptyRecompiler, mockFactory, registry);
+        SituationRecompiler emptyRecompiler = (current, actual, situation, factory) -> Optional.empty();
+        SituationRecompilerEngine emptyEngine = new SituationRecompilerEngine(java.util.List.of(emptyRecompiler));
+        ActualStateAdapterRouter stubRouter = new ActualStateAdapterRouter() {
+            @Override public ActualState readActual(DesiredStateGraph desired, String tenancyId) { return new ActualState(Map.of()); }
+            @Override public java.util.Set<NodeType> allHandledTypes() { return java.util.Set.of(); }
+        };
+        dispatch = new DesiredStateReplanDispatch(mockLifecycleManager, mockLoop, emptyEngine, mockFactory, registry, stubRouter);
 
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("tenancyId", "tenant-1");
