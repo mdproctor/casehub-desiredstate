@@ -1,11 +1,9 @@
 package io.casehub.desiredstate.engine;
 
-import io.casehub.desiredstate.api.CompilationResult;
-import io.casehub.desiredstate.api.DesiredStateGraph;
-import io.casehub.desiredstate.api.DesiredStateGraphFactory;
-import io.casehub.desiredstate.api.SituationRecompiler;
+import io.casehub.desiredstate.api.*;
 import io.casehub.desiredstate.runtime.LifecycleManager;
 import io.casehub.desiredstate.runtime.ReconciliationLoop;
+import io.casehub.desiredstate.runtime.SituationRecompilerEngine;
 import io.casehub.engine.flow.CallableDispatchRegistry;
 import io.casehub.ras.api.ActiveSituation;
 import jakarta.annotation.PostConstruct;
@@ -27,7 +25,8 @@ import java.util.concurrent.CompletableFuture;
  *   <li>Extracts {@code tenancyId} and situation details from input data</li>
  *   <li>Reads current desired graph via {@link ReconciliationLoop#getDesired(String)}</li>
  *   <li>Builds {@link ActiveSituation} from input</li>
- *   <li>Calls {@link SituationRecompiler#recompile(DesiredStateGraph, ActiveSituation, io.casehub.desiredstate.api.DesiredStateGraphFactory)}</li>
+ *   <li>Reads actual state via {@link ActualStateAdapterRouter}</li>
+ *   <li>Calls {@link SituationRecompiler#recompile(DesiredStateGraph, ActualState, ActiveSituation, DesiredStateGraphFactory)}</li>
  *   <li>If recompiler returns a new result, calls {@link LifecycleManager#updateDesired(String, CompilationResult)}</li>
  * </ol>
  *
@@ -39,22 +38,25 @@ public class DesiredStateReplanDispatch {
 
     private final LifecycleManager lifecycleManager;
     private final ReconciliationLoop reconciliationLoop;
-    private final SituationRecompiler situationRecompiler;
+    private final SituationRecompilerEngine recompilerEngine;
     private final DesiredStateGraphFactory graphFactory;
     private final CallableDispatchRegistry callRegistry;
+    private final ActualStateAdapterRouter actualStateRouter;
 
     @Inject
     public DesiredStateReplanDispatch(
             LifecycleManager lifecycleManager,
             ReconciliationLoop reconciliationLoop,
-            SituationRecompiler situationRecompiler,
+            SituationRecompilerEngine recompilerEngine,
             DesiredStateGraphFactory graphFactory,
-            CallableDispatchRegistry callRegistry) {
+            CallableDispatchRegistry callRegistry,
+            ActualStateAdapterRouter actualStateRouter) {
         this.lifecycleManager = lifecycleManager;
         this.reconciliationLoop = reconciliationLoop;
-        this.situationRecompiler = situationRecompiler;
+        this.recompilerEngine = recompilerEngine;
         this.graphFactory = graphFactory;
         this.callRegistry = callRegistry;
+        this.actualStateRouter = actualStateRouter;
     }
 
     void register() {
@@ -87,9 +89,10 @@ public class DesiredStateReplanDispatch {
                 evidence, since, lastSignal, triggerCount);
 
             DesiredStateGraph current = reconciliationLoop.getDesired(tenancyId);
+            ActualState actual = actualStateRouter.readActual(current, tenancyId);
 
-            Optional<CompilationResult> newResult = situationRecompiler.recompile(
-                current, situation, graphFactory);
+            Optional<CompilationResult> newResult = recompilerEngine.recompile(
+                current, actual, situation, graphFactory);
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("situationId", situationId);

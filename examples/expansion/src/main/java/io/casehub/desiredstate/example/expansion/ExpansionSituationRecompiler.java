@@ -16,8 +16,8 @@ public class ExpansionSituationRecompiler implements SituationRecompiler {
 
     @Override
     public Optional<CompilationResult> recompile(
-            DesiredStateGraph current, ActiveSituation situation,
-            DesiredStateGraphFactory factory) {
+            DesiredStateGraph current, ActualState actual,
+            ActiveSituation situation, DesiredStateGraphFactory factory) {
         ExpansionGoal revised = originalGoal.withDefensePosture(DefensePosture.FORTIFY);
         return Optional.of(compiler.compile(revised, factory));
     }

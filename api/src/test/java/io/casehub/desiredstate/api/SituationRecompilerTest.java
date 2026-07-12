@@ -17,7 +17,7 @@ class SituationRecompilerTest {
 
     @Test
     void situationRecompiler_canBeImplemented() {
-        SituationRecompiler recompiler = (current, situation, factory) -> Optional.empty();
+        SituationRecompiler recompiler = (current, actual, situation, factory) -> Optional.empty();
 
         ActiveSituation situation = new ActiveSituation(
             "sit-1", "zone-A", "tenant-1", 0.95,
@@ -29,7 +29,7 @@ class SituationRecompilerTest {
             @Override public DesiredStateGraph of(Collection<DesiredNode> nodes, Collection<Dependency> deps) { return null; }
         };
 
-        Optional<CompilationResult> result = recompiler.recompile(null, situation, mockFactory);
+        Optional<CompilationResult> result = recompiler.recompile(null, new ActualState(Map.of()), situation, mockFactory);
 
         assertThat(result).isEmpty();
     }
@@ -54,14 +54,14 @@ class SituationRecompilerTest {
             @Override public DesiredStateGraph connect(DesiredStateGraph other) { return this; }
         };
 
-        SituationRecompiler recompiler = (current, situation, factory) -> Optional.of(CompilationResult.single(mockGraph));
+        SituationRecompiler recompiler = (current, actual, situation, factory) -> Optional.of(CompilationResult.single(mockGraph));
 
         ActiveSituation situation = new ActiveSituation(
             "sit-1", "zone-A", "tenant-1", 0.95,
             Map.of("nodeId", "node-123", "reason", "persistent-drift"),
             Instant.now().minusSeconds(300), Instant.now(), 5);
 
-        Optional<CompilationResult> result = recompiler.recompile(null, situation, null);
+        Optional<CompilationResult> result = recompiler.recompile(null, new ActualState(Map.of()), situation, null);
 
         assertThat(result).isPresent();
         DesiredStateGraph extractedGraph = ((CompilationResult.SingleGraph) result.get()).graph();
