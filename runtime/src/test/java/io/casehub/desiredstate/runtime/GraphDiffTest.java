@@ -1,11 +1,17 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.Dependency;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.GraphMutation;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeSpec;
+import io.casehub.desiredstate.api.NodeType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class GraphDiffTest {
 
@@ -187,5 +193,33 @@ class GraphDiffTest {
         List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).isEmpty();
+    }
+
+    @Test
+    void targetNodeId_addNode() {
+        DesiredNode n = node("n1", "v1");
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.AddNode(n))).isEqualTo(NodeId.of("n1"));
+    }
+
+    @Test
+    void targetNodeId_removeNode() {
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.RemoveNode(NodeId.of("n1")))).isEqualTo(NodeId.of("n1"));
+    }
+
+    @Test
+    void targetNodeId_updateNode() {
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.UpdateNode(NodeId.of("n1"), new TestSpec("v2")))).isEqualTo(NodeId.of("n1"));
+    }
+
+    @Test
+    void targetNodeId_addDependency_returnsNull() {
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.AddDependency(
+                new Dependency(NodeId.of("a"), NodeId.of("b"))))).isNull();
+    }
+
+    @Test
+    void targetNodeId_removeDependency_returnsNull() {
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.RemoveDependency(
+                new Dependency(NodeId.of("a"), NodeId.of("b"))))).isNull();
     }
 }

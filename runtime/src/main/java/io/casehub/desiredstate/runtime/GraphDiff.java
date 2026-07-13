@@ -1,8 +1,18 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.Dependency;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.GraphMutation;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeType;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 final class GraphDiff {
 
@@ -65,5 +75,15 @@ final class GraphDiff {
         }
 
         return mutations;
+    }
+
+    static NodeId targetNodeId(GraphMutation mutation) {
+        return switch (mutation) {
+            case GraphMutation.AddNode add -> add.node().id();
+            case GraphMutation.RemoveNode remove -> remove.id();
+            case GraphMutation.UpdateNode update -> update.id();
+            case GraphMutation.AddDependency ignored -> null;
+            case GraphMutation.RemoveDependency ignored -> null;
+        };
     }
 }

@@ -1,10 +1,16 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
-import io.cloudevents.CloudEvent;
-import io.cloudevents.core.builder.CloudEventBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import io.casehub.desiredstate.api.CbrEventTypes;
+import io.casehub.desiredstate.api.CbrOutcomeData;
+import io.casehub.desiredstate.api.DesiredStateEventTypes;
+import io.casehub.desiredstate.api.NodeDriftedData;
+import io.casehub.desiredstate.api.NodeFaultedData;
+import io.casehub.desiredstate.api.NodeRecoveredData;
+import io.casehub.desiredstate.api.ReconciliationCompletedData;
+import io.cloudevents.CloudEvent;
+import io.cloudevents.core.builder.CloudEventBuilder;
 
 import java.net.URI;
 import java.time.OffsetDateTime;
@@ -59,6 +65,17 @@ public class ReconciliationEventEmitter {
             .withData("application/json", serialize(data))
             .build();
     }
+
+    public CloudEvent cbrOutcome(CbrOutcomeData data) {
+        return base(CbrEventTypes.CBR_OUTCOME)
+                       .withSubject(data.sourceId())
+                       .withExtension("tenancyid", data.tenancyId())
+                       .withExtension("cbrpath", data.path().name().toLowerCase())
+                       .withExtension("successrate", String.valueOf(data.successRate()))
+                       .withData("application/json", serialize(data))
+                       .build();
+    }
+
 
     private CloudEventBuilder base(String type) {
         return CloudEventBuilder.v1()

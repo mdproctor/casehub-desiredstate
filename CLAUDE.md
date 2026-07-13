@@ -62,12 +62,12 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `NodeProvisionerRouter` | `provision(DesiredNode, ProvisionContext) → ProvisionResult` | Route provision calls to the correct provisioner by NodeType |
 | `NodeProvisionerRouter` | `deprovision(DesiredNode, DeprovisionContext) → DeprovisionResult` | Route deprovision calls to the correct provisioner by NodeType |
 | `NodeProvisionerRouter` | `resyncIntervalFor(NodeType) → Duration` | Get effective resync interval for a type (provisioner default or Preferences override) |
-| `FaultPolicy` | `onFault(FaultEvent, DesiredStateGraph, ActualState) → List<GraphMutation>` | Mutate graph in response to fault (with actual state visibility) |
+| `FaultPolicy` | `onFault(String tenancyId, FaultEvent, DesiredStateGraph, ActualState) → List<GraphMutation>` | Mutate graph in response to fault (with actual state visibility) |
 | `EventSource` | `stream() → Multi<StateEvent>` | Stream actual-state events into reconciliation loop |
 | `TransitionExecutor` | `execute(TransitionPlan, String tenancyId) → Uni<TransitionResult>` | Execute a transition plan (SPI'd — simple or case-backed) |
 | `HumanNodeHandler` | `onProvision(DesiredNode, ProvisionContext) → StepOutcome` | Handle requiresHuman nodes during provision |
 | `PendingApprovalHandler` | `check(DesiredNode, StepAction, String tenancyId) → ApprovalCheckResult` | Track approval lifecycle for provisioner-initiated PendingApproval requests |
-| `SituationRecompiler` | `recompile(DesiredStateGraph, ActualState, ActiveSituation, DesiredStateGraphFactory) → Optional<CompilationResult>` | Situation-driven graph recompilation — independent of GoalCompiler. `priority()` default method for chain ordering |
+| `SituationRecompiler` | `recompile(String tenancyId, DesiredStateGraph, ActualState, ActiveSituation, DesiredStateGraphFactory) → Optional<CompilationResult>` | Situation-driven graph recompilation — independent of GoalCompiler. `priority()` default method for chain ordering |
 | `ConfigurationRetriever` | `retrieve(RetrievalContext, int maxResults) → List<RetrievedConfiguration>` | CBR Retrieve — find similar past configurations by fault/situation context |
 | `ConfigurationAdapter` | `adapt(RetrievedConfiguration, RetrievalContext) → Optional<AdaptedConfiguration>` | CBR Reuse — adapt retrieved configuration to current context |
 | `ReconciliationListener` | `onReconciliationCycleCompleted(String tenancyId, DesiredStateGraph, ActualState)` | Post-cycle callback for lifecycle phase completion checks |
@@ -111,12 +111,17 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `CbrFaultPolicy` | `@ApplicationScoped` FaultPolicy — CBR retrieve → adapt → diff chain for per-node mutations |
 | `CbrSituationRecompiler` | `@ApplicationScoped` SituationRecompiler — CBR retrieve → adapt → CompilationResult for whole-graph replacement. `priority() = Integer.MAX_VALUE` (fallback) |
 | `SituationRecompilerEngine` | `@ApplicationScoped` — chain-of-responsibility aggregation of SituationRecompiler beans by priority |
-| `GraphDiff` | Package-private utility — diffs adapted graph fragment against current to produce `List<GraphMutation>`. Scope by NodeType |
+| `GraphDiff` | Package-private utility — diffs adapted graph fragment against current to produce `List<GraphMutation>`. `targetNodeId()` extracts target NodeId from a mutation. Scope by NodeType |
+| `CbrProposal` | Record — `sourceId`, `path` (FAULT/SITUATION), `affectedNodeIds`, `timestamp`. Tracks what CBR proposed |
+| `CbrPath` | Enum — `FAULT`, `SITUATION`. Distinguishes CBR entry path |
+| `CbrOutcomeData` | CloudEvent data — CBR outcome with per-node results, success rate, timestamps |
+| `CbrEventTypes` | CloudEvent type URI constants for `io.casehub.cbr.*` namespace |
+| `CbrProposalTracker` | `@ApplicationScoped` — mediates CBR proposals and reconciliation outcomes. Records proposals, matches against TransitionResult |
 | `ReconciliationCompletedData` | CloudEvent data — cycle summary |
 | `NodeFaultedData` | CloudEvent data — per-node fault |
 | `NodeDriftedData` | CloudEvent data — per-node drift |
 | `NodeRecoveredData` | CloudEvent data — per-node recovery |
-| `DesiredStateEventTypes` | CloudEvent type URI constants |
+| `DesiredStateEventTypes` | CloudEvent type URI constants for `io.casehub.desiredstate.*` namespace |
 
 ## Ordering Rule — Pruning Before Growing
 

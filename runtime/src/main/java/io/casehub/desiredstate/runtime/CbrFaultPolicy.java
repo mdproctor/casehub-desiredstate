@@ -1,16 +1,33 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.ActualState;
+import io.casehub.desiredstate.api.AdaptedConfiguration;
+import io.casehub.desiredstate.api.CbrConfiguration;
+import io.casehub.desiredstate.api.CbrPath;
+import io.casehub.desiredstate.api.CbrProposal;
+import io.casehub.desiredstate.api.ConfigurationAdapter;
+import io.casehub.desiredstate.api.ConfigurationRetriever;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.FaultEvent;
+import io.casehub.desiredstate.api.FaultPolicy;
+import io.casehub.desiredstate.api.GraphMutation;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.RetrievalContext;
+import io.casehub.desiredstate.api.RetrievedConfiguration;
 import io.casehub.platform.api.preferences.PreferenceProvider;
 import io.casehub.platform.api.preferences.Preferences;
 import io.casehub.platform.api.preferences.SettingsScope;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class CbrFaultPolicy implements FaultPolicy {
@@ -20,17 +37,20 @@ public class CbrFaultPolicy implements FaultPolicy {
     private final ConfigurationRetriever retriever;
     private final ConfigurationAdapter adapter;
     private final PreferenceProvider preferenceProvider;
+    private final CbrProposalTracker tracker;
 
     public CbrFaultPolicy(ConfigurationRetriever retriever,
                            ConfigurationAdapter adapter,
-                           PreferenceProvider preferenceProvider) {
+                           PreferenceProvider preferenceProvider,
+                           CbrProposalTracker tracker) {
         this.retriever = retriever;
         this.adapter = adapter;
         this.preferenceProvider = preferenceProvider;
+        this.tracker = tracker;
     }
 
     @Override
-    public List<GraphMutation> onFault(FaultEvent event, DesiredStateGraph current, ActualState actual) {
+    public List<GraphMutation> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
         CbrConfiguration config = resolveConfiguration();
 
         RetrievalContext context = RetrievalContext.forFault(current, actual, event);
@@ -61,7 +81,19 @@ public class CbrFaultPolicy implements FaultPolicy {
         LOG.log(Level.INFO, "cbr.selected: sourceId={0}, confidence={1}, path=fault",
             new Object[]{selected.sourceId(), selected.confidence()});
 
-        return GraphDiff.computeMutations(current, selected.graph());
+        List<GraphMutation> mutations = GraphDiff.computeMutations(current, selected.graph());
+
+        Set<NodeId> affectedNodeIds = mutations.stream()
+            .map(GraphDiff::targetNodeId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+
+        if (!affectedNodeIds.isEmpty()) {
+            tracker.recordProposal(tenancyId, new CbrProposal(
+                selected.sourceId(), CbrPath.FAULT, affectedNodeIds, Instant.now()));
+        }
+
+        return mutations;
     }
 
     private CbrConfiguration resolveConfiguration() {

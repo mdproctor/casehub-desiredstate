@@ -238,7 +238,7 @@ class ForceDistributionTest {
 
         // ZoneRebalanceFaultPolicy attempts redistribution
         var policy = new ZoneRebalanceFaultPolicy();
-        var mutations = policy.onFault(faultEvent, graph, actual);
+        var mutations = policy.onFault("tenant-1", faultEvent, graph, actual);
 
         // FIXED: Policy now uses ActualState to identify ABSENT unit and redistribute
         assertThat(mutations).as(
@@ -282,7 +282,7 @@ class ForceDistributionTest {
             var faultEvent = new FaultEvent(
                 NodeId.of("zone-frontier"), FaultType.NODE_DEGRADED,
                 "Cycle " + cycle + ": zone member destroyed");
-            allMutations.add(policy.onFault(faultEvent, graph, actual));
+            allMutations.add(policy.onFault("tenant-1", faultEvent, graph, actual));
 
             // Planner restores the unit
             var plan = planner.plan(graph, actual);

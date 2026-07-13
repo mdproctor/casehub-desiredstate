@@ -1,6 +1,28 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.ActualState;
+import io.casehub.desiredstate.api.ActualStateAdapterRouter;
+import io.casehub.desiredstate.api.CbrOutcomeData;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.FaultEvent;
+import io.casehub.desiredstate.api.FaultType;
+import io.casehub.desiredstate.api.GraphMutation;
+import io.casehub.desiredstate.api.MergedEventSource;
+import io.casehub.desiredstate.api.NodeDriftedData;
+import io.casehub.desiredstate.api.NodeFaultedData;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeProvisionerRouter;
+import io.casehub.desiredstate.api.NodeRecoveredData;
+import io.casehub.desiredstate.api.NodeStatus;
+import io.casehub.desiredstate.api.NodeType;
+import io.casehub.desiredstate.api.OrderedStep;
+import io.casehub.desiredstate.api.ReconciliationCompletedData;
+import io.casehub.desiredstate.api.ReconciliationListener;
+import io.casehub.desiredstate.api.StepOutcome;
+import io.casehub.desiredstate.api.TransitionExecutor;
+import io.casehub.desiredstate.api.TransitionPlan;
+import io.casehub.desiredstate.api.TransitionResult;
 import io.cloudevents.CloudEvent;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
@@ -8,7 +30,6 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
-import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.subscription.Cancellable;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -17,7 +38,14 @@ import jakarta.inject.Inject;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -76,6 +104,7 @@ public class ReconciliationLoop {
     private final Duration resyncOverride;
     private final Consumer<CloudEvent> cloudEventSink;
     private final ReconciliationEventEmitter eventEmitter;
+    private final CbrProposalTracker cbrTracker;
 
     private final ConcurrentHashMap<String, TenantLoop> loops = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler;
@@ -93,7 +122,7 @@ public class ReconciliationLoop {
             NodeProvisionerRouter router,
             Event<CloudEvent> cloudEventSink) {
         this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
-             router, DEFAULT_DEBOUNCE, null, cloudEventSink::fire);
+             router, DEFAULT_DEBOUNCE, null, cloudEventSink::fire, null);
     }
 
     /**
@@ -109,7 +138,7 @@ public class ReconciliationLoop {
             NodeProvisionerRouter router,
             Duration debounceWindow) {
         this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
-             router, debounceWindow, null, null);
+             router, debounceWindow, null, null, null);
     }
 
     /**
@@ -126,7 +155,7 @@ public class ReconciliationLoop {
             Duration debounceWindow,
             Duration resyncInterval) {
         this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
-             null, debounceWindow, resyncInterval, null);
+             null, debounceWindow, resyncInterval, null, null);
     }
 
     /**
@@ -142,7 +171,21 @@ public class ReconciliationLoop {
             Duration resyncInterval,
             Consumer<CloudEvent> cloudEventSink) {
         this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
-             null, debounceWindow, resyncInterval, cloudEventSink);
+             null, debounceWindow, resyncInterval, cloudEventSink, null);
+    }
+
+    public ReconciliationLoop(
+            TransitionPlanner planner,
+            TransitionExecutor executor,
+            ActualStateAdapterRouter actualStateAdapterRouter,
+            FaultPolicyEngine faultPolicyEngine,
+            MergedEventSource mergedEventSource,
+            Duration debounceWindow,
+            Duration resyncInterval,
+            Consumer<CloudEvent> cloudEventSink,
+            CbrProposalTracker cbrTracker) {
+        this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
+             null, debounceWindow, resyncInterval, cloudEventSink, cbrTracker);
     }
 
     public ReconciliationLoop(
@@ -152,7 +195,7 @@ public class ReconciliationLoop {
             FaultPolicyEngine faultPolicyEngine,
             MergedEventSource mergedEventSource) {
         this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
-             null, DEFAULT_DEBOUNCE, DEFAULT_RESYNC, null);
+             null, DEFAULT_DEBOUNCE, DEFAULT_RESYNC, null, null);
     }
 
     /**
@@ -172,7 +215,8 @@ public class ReconciliationLoop {
             NodeProvisionerRouter router,
             Duration debounceWindow,
             Duration resyncOverride,
-            Consumer<CloudEvent> cloudEventSink) {
+            Consumer<CloudEvent> cloudEventSink,
+            CbrProposalTracker cbrTracker) {
         this.planner = planner;
         this.executor = executor;
         this.actualStateAdapterRouter = actualStateAdapterRouter;
@@ -183,6 +227,7 @@ public class ReconciliationLoop {
         this.resyncOverride = resyncOverride;
         this.cloudEventSink = cloudEventSink != null ? cloudEventSink : event -> {};
         this.eventEmitter = new ReconciliationEventEmitter();
+        this.cbrTracker = cbrTracker != null ? cbrTracker : new CbrProposalTracker();
 
         int poolSize = computeSchedulerPoolSize();
         this.scheduler = Executors.newScheduledThreadPool(poolSize, r -> {
@@ -461,6 +506,7 @@ public class ReconciliationLoop {
             if (requestedReconciliation != null) {
                 requestedReconciliation.cancel(false);
             }
+            cbrTracker.clearTenant(tenancyId);
         }
 
         void updateDesired(DesiredStateGraph newDesired) {
@@ -536,19 +582,25 @@ public class ReconciliationLoop {
 
                 TransitionPlan plan = plan(desired, actual);
                 if (plan.isEmpty()) {
-                    // Even if plan is empty, emit events for drift/recovery
+                    TransitionResult emptyResult = new TransitionResult(Map.of());
+                    List<CbrOutcomeData> cbrOutcomes = cbrTracker.matchOutcomes(
+                        tenancyId, emptyResult, desired);
                     if (!driftedNodes.isEmpty() || !activeProblems.isEmpty()) {
-                        TransitionResult emptyResult = new TransitionResult(Map.of());
                         emitCycleEvents(desired, plan, emptyResult, actual, driftedNodes);
                     }
+                    emitCbrOutcomeEvents(cbrOutcomes);
                     return;
                 }
 
                 TransitionResult result = execute(plan, tenancyId);
 
+                List<CbrOutcomeData> cbrOutcomes = cbrTracker.matchOutcomes(
+                    tenancyId, result, desired);
+
                 faultFeedback(desired, plan, result, actual);
 
                 emitCycleEvents(desired, plan, result, actual, driftedNodes);
+                emitCbrOutcomeEvents(cbrOutcomes);
             } catch (Exception e) {
                 reconcileSpan.setStatus(StatusCode.ERROR, e.getMessage());
                 reconcileSpan.recordException(e);
@@ -645,7 +697,7 @@ public class ReconciliationLoop {
                         driftedNodesOut.add(entry.getKey());
                         FaultEvent faultEvent = new FaultEvent(
                                 entry.getKey(), FaultType.NODE_DEGRADED, "Node drifted from desired spec");
-                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(faultEvent, mutated, actual);
+                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
                         mutations.addAll(faultMutations);
                         for (GraphMutation mutation : faultMutations) {
                             mutated = mutated.withMutation(mutation);
@@ -712,7 +764,7 @@ public class ReconciliationLoop {
                                 : FaultType.PROVISION_FAILED;
                         FaultEvent faultEvent = new FaultEvent(
                                 entry.getKey(), faultType, failed.reason());
-                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(faultEvent, mutated, actual);
+                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
                         mutationCount += faultMutations.size();
                         mutations.addAll(faultMutations);
                         for (GraphMutation mutation : faultMutations) {
@@ -722,7 +774,7 @@ public class ReconciliationLoop {
                         faultCount++;
                         FaultEvent faultEvent = new FaultEvent(
                                 entry.getKey(), FaultType.APPROVAL_REJECTED, rejected.reason());
-                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(faultEvent, mutated, actual);
+                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
                         mutationCount += faultMutations.size();
                         mutations.addAll(faultMutations);
                         for (GraphMutation mutation : faultMutations) {
@@ -860,6 +912,13 @@ public class ReconciliationLoop {
             events.forEach(cloudEventSink);
         }
 
+        private void emitCbrOutcomeEvents(List<CbrOutcomeData> outcomes) {
+            for (CbrOutcomeData outcome : outcomes) {
+                cloudEventSink.accept(eventEmitter.cbrOutcome(outcome));
+            }
+        }
+
+
         /**
          * Resolve the parent node ID for a given node.
          * Returns the first dependency (if any), or null for root nodes.
@@ -874,3 +933,4 @@ public class ReconciliationLoop {
         }
     }
 }
+

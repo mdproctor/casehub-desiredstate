@@ -1,13 +1,37 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
-import io.casehub.platform.api.preferences.*;
+import io.casehub.desiredstate.api.ActualState;
+import io.casehub.desiredstate.api.AdaptedConfiguration;
+import io.casehub.desiredstate.api.CbrPath;
+import io.casehub.desiredstate.api.ConfigurationAdapter;
+import io.casehub.desiredstate.api.ConfigurationRetriever;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.FaultEvent;
+import io.casehub.desiredstate.api.FaultType;
+import io.casehub.desiredstate.api.GraphMutation;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeSpec;
+import io.casehub.desiredstate.api.NodeType;
+import io.casehub.desiredstate.api.RetrievalContext;
+import io.casehub.desiredstate.api.RetrievedConfiguration;
+import io.casehub.desiredstate.api.StepOutcome;
+import io.casehub.desiredstate.api.TransitionResult;
+import io.casehub.platform.api.preferences.MultiValuePreference;
+import io.casehub.platform.api.preferences.PreferenceKey;
+import io.casehub.platform.api.preferences.PreferenceProvider;
+import io.casehub.platform.api.preferences.Preferences;
+import io.casehub.platform.api.preferences.SingleValuePreference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 class CbrFaultPolicyTest {
 
@@ -16,6 +40,7 @@ class CbrFaultPolicyTest {
     private StubRetriever retriever;
     private StubAdapter adapter;
     private PreferenceProvider prefProvider;
+    private CbrProposalTracker tracker;
     private CbrFaultPolicy policy;
 
     @BeforeEach
@@ -23,14 +48,15 @@ class CbrFaultPolicyTest {
         retriever = new StubRetriever();
         adapter = new StubAdapter();
         prefProvider = scope -> new MapPreferences(Map.of());
-        policy = new CbrFaultPolicy(retriever, adapter, prefProvider);
+        tracker = new CbrProposalTracker();
+        policy = new CbrFaultPolicy(retriever, adapter, prefProvider, tracker);
     }
 
     @Test
     void noCandidates_shouldReturnEmptyMutations() {
         retriever.setResults(List.of());
 
-        List<GraphMutation> mutations = policy.onFault(
+        List<GraphMutation> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -47,7 +73,7 @@ class CbrFaultPolicyTest {
             new RetrievedConfiguration(adapted, 0.3, "case-1", Map.of())));
         adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.9, "case-1"));
 
-        List<GraphMutation> mutations = policy.onFault(
+        List<GraphMutation> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -64,7 +90,7 @@ class CbrFaultPolicyTest {
             new RetrievedConfiguration(adapted, 0.8, "case-1", Map.of())));
         adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.4, "case-1"));
 
-        List<GraphMutation> mutations = policy.onFault(
+        List<GraphMutation> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -81,7 +107,7 @@ class CbrFaultPolicyTest {
             new RetrievedConfiguration(adapted, 0.9, "case-1", Map.of())));
         adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.8, "case-1"));
 
-        List<GraphMutation> mutations = policy.onFault(
+        List<GraphMutation> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -97,7 +123,7 @@ class CbrFaultPolicyTest {
             new RetrievedConfiguration(adapted, 0.9, "case-1", Map.of())));
         // adapter default is null → returns Optional.empty()
 
-        List<GraphMutation> mutations = policy.onFault(
+        List<GraphMutation> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -118,7 +144,7 @@ class CbrFaultPolicyTest {
         adapter.setResultForSource("case-low", new AdaptedConfiguration(low, 0.65, "case-low"));
         adapter.setResultForSource("case-high", new AdaptedConfiguration(high, 0.95, "case-high"));
 
-        List<GraphMutation> mutations = policy.onFault(
+        List<GraphMutation> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -138,7 +164,7 @@ class CbrFaultPolicyTest {
         adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.8, "case-1"));
 
         // Default threshold 0.5 → 0.3 below → filtered
-        List<GraphMutation> mutations1 = policy.onFault(
+        List<GraphMutation> mutations1 = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "x"),
             ImmutableDesiredStateGraph.empty(), new ActualState(Map.of()));
         assertThat(mutations1).isEmpty();
@@ -146,9 +172,9 @@ class CbrFaultPolicyTest {
         // Lower threshold to 0.2 via preferences
         prefProvider = scope -> new MapPreferences(Map.of(
             DesiredStatePreferenceKeys.CBR_MIN_RETRIEVAL_CONFIDENCE.qualifiedName(), "0.2"));
-        policy = new CbrFaultPolicy(retriever, adapter, prefProvider);
+        policy = new CbrFaultPolicy(retriever, adapter, prefProvider, tracker);
 
-        List<GraphMutation> mutations2 = policy.onFault(
+        List<GraphMutation> mutations2 = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "x"),
             ImmutableDesiredStateGraph.empty(), new ActualState(Map.of()));
         assertThat(mutations2).hasSize(1);
@@ -161,15 +187,67 @@ class CbrFaultPolicyTest {
             captured.add(ctx);
             return List.of();
         };
-        CbrFaultPolicy p = new CbrFaultPolicy(capturingRetriever, adapter, prefProvider);
+        CbrFaultPolicy p = new CbrFaultPolicy(capturingRetriever, adapter, prefProvider, tracker);
 
         FaultEvent event = new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "boom");
-        p.onFault(event, ImmutableDesiredStateGraph.empty(), new ActualState(Map.of()));
+        p.onFault("tenant-1", event, ImmutableDesiredStateGraph.empty(), new ActualState(Map.of()));
 
         assertThat(captured).hasSize(1);
         assertThat(captured.get(0).faultEvent()).isEqualTo(event);
         assertThat(captured.get(0).situation()).isNull();
     }
+
+    @Test
+    void successfulAdaptation_recordsProposalInTracker() {
+        DesiredStateGraph adapted = ImmutableDesiredStateGraph.empty().withNode(
+                new DesiredNode(NodeId.of("n1"), NodeType.of("t"), new TestSpec("fixed"), false));
+
+        retriever.setResults(List.of(
+                new RetrievedConfiguration(adapted, 0.9, "case-42", Map.of())));
+        adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.8, "case-42"));
+
+        policy.onFault("tenant-1",
+                       new FaultEvent(NodeId.of("x1"), FaultType.PROVISION_FAILED, "timeout"),
+                       ImmutableDesiredStateGraph.empty(),
+                       new ActualState(Map.of()));
+
+        var result   = new TransitionResult(Map.of(NodeId.of("n1"), new StepOutcome.Succeeded()));
+        var outcomes = tracker.matchOutcomes("tenant-1", result, ImmutableDesiredStateGraph.empty());
+        assertThat(outcomes).hasSize(1);
+        assertThat(outcomes.get(0).sourceId()).isEqualTo("case-42");
+        assertThat(outcomes.get(0).path()).isEqualTo(CbrPath.FAULT);
+    }
+
+    @Test
+    void noCandidates_doesNotRecordProposal() {
+        retriever.setResults(List.of());
+
+        policy.onFault("tenant-1",
+                       new FaultEvent(NodeId.of("x1"), FaultType.PROVISION_FAILED, "timeout"),
+                       ImmutableDesiredStateGraph.empty(),
+                       new ActualState(Map.of()));
+
+        var result = new TransitionResult(Map.of());
+        assertThat(tracker.matchOutcomes("tenant-1", result, ImmutableDesiredStateGraph.empty())).isEmpty();
+    }
+
+    @Test
+    void identicalGraphs_noMutations_doesNotRecordProposal() {
+        DesiredStateGraph graph = ImmutableDesiredStateGraph.empty().withNode(
+                new DesiredNode(NodeId.of("n1"), NodeType.of("t"), new TestSpec("v"), false));
+
+        retriever.setResults(List.of(
+                new RetrievedConfiguration(graph, 0.9, "case-99", Map.of())));
+        adapter.setDefaultResult(new AdaptedConfiguration(graph, 0.8, "case-99"));
+
+        policy.onFault("tenant-1",
+                       new FaultEvent(NodeId.of("x1"), FaultType.PROVISION_FAILED, "timeout"),
+                       graph, new ActualState(Map.of()));
+
+        var result = new TransitionResult(Map.of());
+        assertThat(tracker.matchOutcomes("tenant-1", result, ImmutableDesiredStateGraph.empty())).isEmpty();
+    }
+
 
     static class StubRetriever implements ConfigurationRetriever {
         private List<RetrievedConfiguration> results = List.of();

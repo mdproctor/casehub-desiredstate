@@ -137,7 +137,7 @@ class ExpansionLifecycleTest {
             "nexus-failure", "loc-1", "t1", 0.95,
             Map.of("failedNode", "nexus"), Instant.now(), Instant.now(), 5);
 
-        Optional<CompilationResult> replanned = recompiler.recompile(
+        Optional<CompilationResult> replanned = recompiler.recompile("tenant-1",
             buildGraph, new ActualState(Map.of()), situation, factory);
 
         assertThat(replanned).isPresent();

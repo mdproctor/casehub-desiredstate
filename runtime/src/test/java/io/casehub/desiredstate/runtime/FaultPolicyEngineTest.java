@@ -29,14 +29,14 @@ class FaultPolicyEngineTest {
 
         FaultEvent event = new FaultEvent(NodeId.of("n1"), FaultType.NODE_DESTROYED, "detail");
 
-        List<GraphMutation> mutations = engine.evaluate(event, graph, new ActualState(Map.of()));
+        List<GraphMutation> mutations = engine.evaluate("tenant-1", event, graph, new ActualState(Map.of()));
 
         assertTrue(mutations.isEmpty());
     }
 
     @Test
     void singlePolicy_returnsMutations() {
-        FaultPolicy policy = (event, current, actual) -> List.of(
+        FaultPolicy policy = (tid, event, current, actual) -> List.of(
             new GraphMutation.RemoveNode(event.node())
         );
 
@@ -49,7 +49,7 @@ class FaultPolicyEngineTest {
 
         FaultEvent event = new FaultEvent(NodeId.of("n1"), FaultType.NODE_DESTROYED, "detail");
 
-        List<GraphMutation> mutations = engine.evaluate(event, graph, new ActualState(Map.of()));
+        List<GraphMutation> mutations = engine.evaluate("tenant-1", event, graph, new ActualState(Map.of()));
 
         assertEquals(1, mutations.size());
         assertTrue(mutations.get(0) instanceof GraphMutation.RemoveNode);
@@ -58,11 +58,11 @@ class FaultPolicyEngineTest {
 
     @Test
     void multiplePolicies_mergesMutations() {
-        FaultPolicy policy1 = (event, current, actual) -> List.of(
+        FaultPolicy policy1 = (tid, event, current, actual) -> List.of(
             new GraphMutation.RemoveNode(NodeId.of("n1"))
         );
 
-        FaultPolicy policy2 = (event, current, actual) -> List.of(
+        FaultPolicy policy2 = (tid, event, current, actual) -> List.of(
             new GraphMutation.UpdateNode(NodeId.of("n2"), new TestSpec("updated"))
         );
 
@@ -78,18 +78,18 @@ class FaultPolicyEngineTest {
 
         FaultEvent event = new FaultEvent(NodeId.of("n1"), FaultType.NODE_DESTROYED, "detail");
 
-        List<GraphMutation> mutations = engine.evaluate(event, graph, new ActualState(Map.of()));
+        List<GraphMutation> mutations = engine.evaluate("tenant-1", event, graph, new ActualState(Map.of()));
 
         assertEquals(2, mutations.size());
     }
 
     @Test
     void sameMutationFromTwoPolicies_deduplicated() {
-        FaultPolicy policy1 = (event, current, actual) -> List.of(
+        FaultPolicy policy1 = (tid, event, current, actual) -> List.of(
             new GraphMutation.RemoveNode(NodeId.of("n1"))
         );
 
-        FaultPolicy policy2 = (event, current, actual) -> List.of(
+        FaultPolicy policy2 = (tid, event, current, actual) -> List.of(
             new GraphMutation.RemoveNode(NodeId.of("n1"))
         );
 
@@ -102,18 +102,18 @@ class FaultPolicyEngineTest {
 
         FaultEvent event = new FaultEvent(NodeId.of("n1"), FaultType.NODE_DESTROYED, "detail");
 
-        List<GraphMutation> mutations = engine.evaluate(event, graph, new ActualState(Map.of()));
+        List<GraphMutation> mutations = engine.evaluate("tenant-1", event, graph, new ActualState(Map.of()));
 
         assertEquals(1, mutations.size());
     }
 
     @Test
     void conflictingMutations_throwsException() {
-        FaultPolicy policy1 = (event, current, actual) -> List.of(
+        FaultPolicy policy1 = (tid, event, current, actual) -> List.of(
             new GraphMutation.RemoveNode(NodeId.of("n1"))
         );
 
-        FaultPolicy policy2 = (event, current, actual) -> List.of(
+        FaultPolicy policy2 = (tid, event, current, actual) -> List.of(
             new GraphMutation.UpdateNode(NodeId.of("n1"), new TestSpec("updated"))
         );
 
@@ -128,7 +128,7 @@ class FaultPolicyEngineTest {
 
         ConflictingMutationException ex = assertThrows(
             ConflictingMutationException.class,
-            () -> engine.evaluate(event, graph, new ActualState(Map.of()))
+            () -> engine.evaluate("tenant-1", event, graph, new ActualState(Map.of()))
         );
 
         assertEquals(NodeId.of("n1"), ex.getNodeId());
@@ -136,11 +136,11 @@ class FaultPolicyEngineTest {
 
     @Test
     void dependencyMutations_noConflict() {
-        FaultPolicy policy1 = (event, current, actual) -> List.of(
+        FaultPolicy policy1 = (tid, event, current, actual) -> List.of(
             new GraphMutation.AddDependency(new Dependency(NodeId.of("n1"), NodeId.of("n2")))
         );
 
-        FaultPolicy policy2 = (event, current, actual) -> List.of(
+        FaultPolicy policy2 = (tid, event, current, actual) -> List.of(
             new GraphMutation.AddDependency(new Dependency(NodeId.of("n1"), NodeId.of("n3")))
         );
 
@@ -153,7 +153,7 @@ class FaultPolicyEngineTest {
 
         FaultEvent event = new FaultEvent(NodeId.of("n1"), FaultType.DEPENDENCY_UNAVAILABLE, "detail");
 
-        List<GraphMutation> mutations = engine.evaluate(event, graph, new ActualState(Map.of()));
+        List<GraphMutation> mutations = engine.evaluate("tenant-1", event, graph, new ActualState(Map.of()));
 
         assertEquals(2, mutations.size());
         assertTrue(mutations.stream().allMatch(m -> m instanceof GraphMutation.AddDependency));
@@ -166,7 +166,7 @@ class FaultPolicyEngineTest {
             NodeId.of("n2"), NodeStatus.PRESENT
         ));
 
-        FaultPolicy policy = (event, current, actualState) -> {
+        FaultPolicy policy = (tid, event, current, actualState) -> {
             // Policy can now inspect actual state
             if (actualState.statusOf(event.node()).orElse(NodeStatus.UNKNOWN) == NodeStatus.ABSENT) {
                 return List.of(new GraphMutation.RemoveNode(event.node()));
@@ -182,7 +182,7 @@ class FaultPolicyEngineTest {
 
         FaultEvent event = new FaultEvent(NodeId.of("n1"), FaultType.NODE_DESTROYED, "detail");
 
-        List<GraphMutation> mutations = engine.evaluate(event, graph, actual);
+        List<GraphMutation> mutations = engine.evaluate("tenant-1", event, graph, actual);
 
         assertEquals(1, mutations.size());
         assertInstanceOf(GraphMutation.RemoveNode.class, mutations.get(0));

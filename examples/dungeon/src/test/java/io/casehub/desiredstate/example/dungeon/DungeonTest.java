@@ -131,7 +131,7 @@ class DungeonTest {
         );
 
         // Policy should return AddNode mutation
-        List<GraphMutation> mutations = policy.onFault(fault, graph, new ActualState(Map.of()));
+        List<GraphMutation> mutations = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
         assertEquals(1, mutations.size(), "Should return one mutation");
         assertInstanceOf(GraphMutation.AddNode.class, mutations.get(0));
 
@@ -255,7 +255,7 @@ class DungeonTest {
             "Failed to provision"
         );
 
-        List<GraphMutation> mutations = policy.onFault(fault, graph, new ActualState(Map.of()));
+        List<GraphMutation> mutations = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
         assertTrue(mutations.isEmpty(), "Policy should ignore non-destruction faults");
     }
 }
