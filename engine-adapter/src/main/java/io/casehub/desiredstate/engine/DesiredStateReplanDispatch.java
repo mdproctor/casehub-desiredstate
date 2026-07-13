@@ -92,7 +92,7 @@ public class DesiredStateReplanDispatch {
             ActualState actual = actualStateRouter.readActual(current, tenancyId);
 
             Optional<CompilationResult> newResult = recompilerEngine.recompile(
-                current, actual, situation, graphFactory);
+                tenancyId, current, actual, situation, graphFactory);
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("situationId", situationId);

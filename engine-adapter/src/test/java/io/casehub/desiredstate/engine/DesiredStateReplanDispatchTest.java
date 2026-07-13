@@ -82,7 +82,7 @@ class DesiredStateReplanDispatchTest {
             }
         };
 
-        mockRecompiler = (current, actual, situation, factory) -> Optional.of(CompilationResult.single(newGraph));
+        mockRecompiler = (tid, current, actual, situation, factory) -> Optional.of(CompilationResult.single(newGraph));
         SituationRecompilerEngine engine = new SituationRecompilerEngine(java.util.List.of(mockRecompiler));
 
         ActualStateAdapterRouter stubRouter = new ActualStateAdapterRouter() {
@@ -124,7 +124,7 @@ class DesiredStateReplanDispatchTest {
 
     @Test
     void shouldReturnNoChangeWhenRecompilerReturnsEmpty() throws Exception {
-        SituationRecompiler emptyRecompiler = (current, actual, situation, factory) -> Optional.empty();
+        SituationRecompiler emptyRecompiler = (tid, current, actual, situation, factory) -> Optional.empty();
         SituationRecompilerEngine emptyEngine = new SituationRecompilerEngine(java.util.List.of(emptyRecompiler));
         ActualStateAdapterRouter stubRouter = new ActualStateAdapterRouter() {
             @Override public ActualState readActual(DesiredStateGraph desired, String tenancyId) { return new ActualState(Map.of()); }

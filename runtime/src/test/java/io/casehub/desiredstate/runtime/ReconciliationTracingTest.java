@@ -227,7 +227,7 @@ class ReconciliationTracingTest {
         actualAdapter.setStatuses(Map.of());
         testExecutor.failNodes.add(NodeId.of("a"));
 
-        FaultPolicy noopPolicy = (event, current, actual) -> List.of();
+        FaultPolicy noopPolicy = (tid, event, current, actual) -> List.of();
         faultEngine = new FaultPolicyEngine(List.of(noopPolicy));
         var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(
@@ -278,7 +278,7 @@ class ReconciliationTracingTest {
         DesiredStateGraph desired = factory.of(List.of(nodeA), List.of());
         actualAdapter.setStatuses(Map.of(NodeId.of("a"), NodeStatus.DRIFTED));
 
-        FaultPolicy noopPolicy = (event, current, actual) -> List.of();
+        FaultPolicy noopPolicy = (tid, event, current, actual) -> List.of();
         faultEngine = new FaultPolicyEngine(List.of(noopPolicy));
         var adapterRouter = new DefaultActualStateAdapterRouter(List.of(actualAdapter));
         loop = new ReconciliationLoop(

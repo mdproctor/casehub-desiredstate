@@ -1,6 +1,10 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.ActualState;
+import io.casehub.desiredstate.api.CompilationResult;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.DesiredStateGraphFactory;
+import io.casehub.desiredstate.api.SituationRecompiler;
 import io.casehub.ras.api.ActiveSituation;
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -20,12 +24,13 @@ public class SituationRecompilerEngine {
     }
 
     public Optional<CompilationResult> recompile(
+            String tenancyId,
             DesiredStateGraph current, ActualState actual,
             ActiveSituation situation, DesiredStateGraphFactory factory) {
         for (SituationRecompiler recompiler : recompilers) {
             Optional<CompilationResult> result = recompiler.recompile(
-                current, actual, situation, factory);
-            if (result.isPresent()) return result;
+                    tenancyId, current, actual, situation, factory);
+            if (result.isPresent()) {return result;}
         }
         return Optional.empty();
     }

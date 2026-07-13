@@ -22,10 +22,11 @@ import java.util.Optional;
 public interface SituationRecompiler {
 
     Optional<CompilationResult> recompile(
-        DesiredStateGraph current,
-        ActualState actual,
-        ActiveSituation situation,
-        DesiredStateGraphFactory factory);
+            String tenancyId,
+            DesiredStateGraph current,
+            ActualState actual,
+            ActiveSituation situation,
+            DesiredStateGraphFactory factory);
 
     default int priority() { return 0; }
 }

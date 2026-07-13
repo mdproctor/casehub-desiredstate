@@ -1,6 +1,12 @@
 package io.casehub.desiredstate.example.dungeon;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.ActualState;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.FaultEvent;
+import io.casehub.desiredstate.api.FaultPolicy;
+import io.casehub.desiredstate.api.FaultType;
+import io.casehub.desiredstate.api.GraphMutation;
 
 import java.util.List;
 
@@ -11,12 +17,11 @@ import java.util.List;
 public class HeroRaidFaultPolicy implements FaultPolicy {
 
     @Override
-    public List<GraphMutation> onFault(FaultEvent event, DesiredStateGraph current, ActualState actual) {
+    public List<GraphMutation> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
         if (event.type() != FaultType.NODE_DESTROYED) {
             return List.of();
         }
 
-        // Rebuild the destroyed node if it exists in the desired graph
         DesiredNode destroyedNode = current.nodes().get(event.node());
         if (destroyedNode == null) {
             return List.of();

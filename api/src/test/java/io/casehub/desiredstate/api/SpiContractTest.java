@@ -74,8 +74,8 @@ class SpiContractTest {
     }
 
     @Test void faultPolicy_canBeImplemented() {
-        FaultPolicy policy = (event, graph, actual) -> List.of();
-        assertThat(policy.onFault(null, null, null)).isEmpty();
+        FaultPolicy policy = (tid, event, graph, actual) -> List.of();
+        assertThat(policy.onFault("tenant-1", null, null, null)).isEmpty();
     }
 
     @Test void eventSource_canBeImplemented() {
