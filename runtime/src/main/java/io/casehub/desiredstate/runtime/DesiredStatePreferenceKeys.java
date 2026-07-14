@@ -1,8 +1,8 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.DoublePreference;
-import io.casehub.desiredstate.api.IntPreference;
+import io.casehub.platform.api.preferences.DoublePreference;
 import io.casehub.platform.api.preferences.DurationPreference;
+import io.casehub.platform.api.preferences.IntPreference;
 import io.casehub.platform.api.preferences.PreferenceKey;
 
 import java.time.Duration;
