@@ -1,6 +1,22 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.ApprovalCheckResult;
+import io.casehub.desiredstate.api.DeprovisionContext;
+import io.casehub.desiredstate.api.DeprovisionResult;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.HumanNodeHandler;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeProvisionerRouter;
+import io.casehub.desiredstate.api.OrderedStep;
+import io.casehub.desiredstate.api.PendingApprovalHandler;
+import io.casehub.desiredstate.api.ProvisionContext;
+import io.casehub.desiredstate.api.ProvisionResult;
+import io.casehub.desiredstate.api.StepAction;
+import io.casehub.desiredstate.api.StepOutcome;
+import io.casehub.desiredstate.api.TransitionExecutor;
+import io.casehub.desiredstate.api.TransitionPlan;
+import io.casehub.desiredstate.api.TransitionResult;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.Span;
@@ -105,24 +121,28 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
 
     private StepOutcome executeDeprovision(DesiredNode node, DesiredStateGraph graph, String tenancyId) {
         Span span = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME).spanBuilder("deprovision")
-                .setAttribute(AttributeKey.stringKey("desiredstate.node.id"), node.id().value())
-                .setAttribute(AttributeKey.stringKey("desiredstate.node.type"), node.type().value())
-                .startSpan();
+                                       .setAttribute(AttributeKey.stringKey("desiredstate.node.id"), node.id().value())
+                                       .setAttribute(AttributeKey.stringKey("desiredstate.node.type"), node.type().value())
+                                       .setAttribute(AttributeKey.booleanKey("desiredstate.requires.human"), node.requiresHuman())
+                                       .startSpan();
         try (Scope scope = span.makeCurrent()) {
             DeprovisionContext context = new DeprovisionContext(tenancyId, graph);
 
-            // Check for prior approval state before calling provisioner (no requiresHuman for deprovision)
+            if (node.requiresHuman()) {
+                return humanNodeHandler.onDeprovision(node, context);
+            }
+
             ApprovalCheckResult approvalCheck = pendingApprovalHandler.check(node, StepAction.DEPROVISION, tenancyId);
             switch (approvalCheck) {
-                case ApprovalCheckResult.Pending p ->
-                    { return new StepOutcome.Skipped("pending approval: " + p.planReference()); }
+                case ApprovalCheckResult.Pending p -> {
+                    return new StepOutcome.Skipped("pending approval: " + p.planReference());
+                }
                 case ApprovalCheckResult.Rejected r -> {
                     pendingApprovalHandler.acknowledgeRejection(node, StepAction.DEPROVISION, tenancyId);
                     span.setStatus(StatusCode.ERROR, "approval rejected: " + r.reason());
                     return new StepOutcome.Rejected("approval rejected: " + r.reason());
                 }
-                case ApprovalCheckResult.Approved a ->
-                    context = context.withApproval(a.approval());
+                case ApprovalCheckResult.Approved a -> context = context.withApproval(a.approval());
                 case ApprovalCheckResult.None ignored -> {}
             }
 
@@ -134,8 +154,7 @@ public class SimpleTransitionExecutor implements TransitionExecutor {
                     span.setStatus(StatusCode.ERROR, f.reason());
                     yield new StepOutcome.Failed(f.reason());
                 }
-                case DeprovisionResult.PendingApproval pa ->
-                    pendingApprovalHandler.recordPending(node, StepAction.DEPROVISION, tenancyId, pa.planReference());
+                case DeprovisionResult.PendingApproval pa -> pendingApprovalHandler.recordPending(node, StepAction.DEPROVISION, tenancyId, pa.planReference());
             };
         } finally {
             span.end();

@@ -4,19 +4,18 @@ import io.casehub.api.engine.CaseHubRuntime;
 import io.casehub.api.model.Binding;
 import io.casehub.api.model.CaseDefinition;
 import io.casehub.api.model.ContextChangeTrigger;
-import io.casehub.engine.flow.FlowWorkerFunction;
 import io.casehub.api.model.HumanTaskTarget;
-import io.casehub.worker.api.Capability;
-import io.casehub.worker.api.Worker;
 import io.casehub.desiredstate.api.ApprovalCheckResult;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.OrderedStep;
 import io.casehub.desiredstate.api.PendingApprovalHandler;
-import io.casehub.desiredstate.api.StepAction;
 import io.casehub.desiredstate.api.StepOutcome;
 import io.casehub.desiredstate.api.TransitionExecutor;
 import io.casehub.desiredstate.api.TransitionPlan;
 import io.casehub.desiredstate.api.TransitionResult;
+import io.casehub.engine.flow.FlowWorkerFunction;
+import io.casehub.worker.api.Capability;
+import io.casehub.worker.api.Worker;
 import io.serverlessworkflow.api.types.Workflow;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -148,34 +147,44 @@ public class CaseTransitionExecutor implements TransitionExecutor {
     }
 
     CaseDefinition buildCaseDefinition(TransitionPlan plan, String executionId) {
-        List<Worker> workers = new ArrayList<>(2);
+        List<Worker>  workers  = new ArrayList<>(2);
         List<Binding> bindings = new ArrayList<>(2);
 
         Capability dispatchCapability = Capability.builder()
-            .name("desiredstate-dispatch")
-            .inputSchema("{}")
-            .outputSchema("{}")
-            .description("Dispatches desired-state node provision/deprovision actions")
-            .build();
+                                                  .name("desiredstate-dispatch")
+                                                  .inputSchema("{}")
+                                                  .outputSchema("{}")
+                                                  .description("Dispatches desired-state node provision/deprovision actions")
+                                                  .build();
 
-        if (!plan.removals().isEmpty()) {
+        List<OrderedStep> automatedRemovals = new ArrayList<>();
+        List<OrderedStep> humanRemovals     = new ArrayList<>();
+        for (OrderedStep step : plan.removals()) {
+            if (step.node().requiresHuman()) {
+                humanRemovals.add(step);
+            } else {
+                automatedRemovals.add(step);
+            }
+        }
+
+        if (!automatedRemovals.isEmpty()) {
             Workflow pruneWorkflow = workflowGenerator.generate(
-                plan.removals(), NAMESPACE, "prune-phase", CASE_VERSION, executionId
-            );
+                    automatedRemovals, NAMESPACE, "prune-phase", CASE_VERSION, executionId
+                                                               );
 
             Worker pruneWorker = Worker.builder()
-                .name("prune")
-                .capabilityName(dispatchCapability.name())
-                .function(new FlowWorkerFunction(pruneWorkflow))
-                .description("Removes nodes no longer in the desired state (leaves before roots)")
-                .build();
+                                       .name("prune")
+                                       .capabilityName(dispatchCapability.name())
+                                       .function(new FlowWorkerFunction(pruneWorkflow))
+                                       .description("Removes nodes no longer in the desired state (leaves before roots)")
+                                       .build();
 
             workers.add(pruneWorker);
             bindings.add(buildBinding("prune-binding", dispatchCapability));
         }
 
         List<OrderedStep> automatedAdditions = new ArrayList<>();
-        List<OrderedStep> humanAdditions = new ArrayList<>();
+        List<OrderedStep> humanAdditions     = new ArrayList<>();
         for (OrderedStep step : plan.additions()) {
             if (step.node().requiresHuman()) {
                 humanAdditions.add(step);
@@ -186,45 +195,58 @@ public class CaseTransitionExecutor implements TransitionExecutor {
 
         if (!automatedAdditions.isEmpty()) {
             Workflow growWorkflow = workflowGenerator.generate(
-                automatedAdditions, NAMESPACE, "grow-phase", CASE_VERSION, executionId
-            );
+                    automatedAdditions, NAMESPACE, "grow-phase", CASE_VERSION, executionId
+                                                              );
 
             Worker growWorker = Worker.builder()
-                .name("grow")
-                .capabilityName(dispatchCapability.name())
-                .function(new FlowWorkerFunction(growWorkflow))
-                .description("Provisions new nodes in the desired state (roots before leaves)")
-                .build();
+                                      .name("grow")
+                                      .capabilityName(dispatchCapability.name())
+                                      .function(new FlowWorkerFunction(growWorkflow))
+                                      .description("Provisions new nodes in the desired state (roots before leaves)")
+                                      .build();
 
             workers.add(growWorker);
-            if (plan.removals().isEmpty()) {
+            if (automatedRemovals.isEmpty()) {
                 bindings.add(buildBinding("grow-binding", dispatchCapability));
             }
         }
 
-        for (OrderedStep step : humanAdditions) {
+        for (OrderedStep step : humanRemovals) {
             HumanTaskTarget humanTask = HumanTaskTarget.inline()
-                .title("Review: " + step.node().id().value())
-                .build();
+                                                       .title("Review removal: " + step.node().id().value())
+                                                       .build();
 
             bindings.add(Binding.builder()
-                .name("human-" + step.node().id().value())
-                .humanTask(humanTask)
-                .on(new ContextChangeTrigger("."))
-                .build());
+                                .name("human-deprovision-" + step.node().id().value())
+                                .humanTask(humanTask)
+                                .on(new ContextChangeTrigger("."))
+                                .build());
+        }
+
+        for (OrderedStep step : humanAdditions) {
+            HumanTaskTarget humanTask = HumanTaskTarget.inline()
+                                                       .title("Review: " + step.node().id().value())
+                                                       .build();
+
+            bindings.add(Binding.builder()
+                                .name("human-provision-" + step.node().id().value())
+                                .humanTask(humanTask)
+                                .on(new ContextChangeTrigger("."))
+                                .build());
         }
 
         return CaseDefinition.builder()
-            .namespace(NAMESPACE)
-            .name("desired-state-transition")
-            .version(CASE_VERSION)
-            .title("Desired State Transition")
-            .summary("Automated desired-state transition: " + plan.removals().size()
-                + " removals, " + automatedAdditions.size() + " additions, "
-                + humanAdditions.size() + " human tasks")
-            .workers(workers)
-            .bindings(bindings)
-            .build();
+                             .namespace(NAMESPACE)
+                             .name("desired-state-transition")
+                             .version(CASE_VERSION)
+                             .title("Desired State Transition")
+                             .summary("Automated desired-state transition: " + automatedRemovals.size()
+                                      + " removals, " + automatedAdditions.size() + " additions, "
+                                      + humanRemovals.size() + " human removals, "
+                                      + humanAdditions.size() + " human additions")
+                             .workers(workers)
+                             .bindings(bindings)
+                             .build();
     }
 
     private Binding buildBinding(String name, Capability capability) {
@@ -239,7 +261,11 @@ public class CaseTransitionExecutor implements TransitionExecutor {
         Map<NodeId, StepOutcome> outcomes = new LinkedHashMap<>();
 
         for (OrderedStep step : plan.removals()) {
-            outcomes.put(step.node().id(), new StepOutcome.Succeeded());
+            if (step.node().requiresHuman()) {
+                outcomes.put(step.node().id(), new StepOutcome.Skipped("routed to WorkItem"));
+            } else {
+                outcomes.put(step.node().id(), new StepOutcome.Succeeded());
+            }
         }
         for (OrderedStep step : plan.additions()) {
             if (step.node().requiresHuman()) {

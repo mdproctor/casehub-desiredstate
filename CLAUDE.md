@@ -66,6 +66,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `EventSource` | `stream() → Multi<StateEvent>` | Stream actual-state events into reconciliation loop |
 | `TransitionExecutor` | `execute(TransitionPlan, String tenancyId) → Uni<TransitionResult>` | Execute a transition plan (SPI'd — simple or case-backed) |
 | `HumanNodeHandler` | `onProvision(DesiredNode, ProvisionContext) → StepOutcome` | Handle requiresHuman nodes during provision |
+| `HumanNodeHandler` | `default onDeprovision(DesiredNode, DeprovisionContext) → StepOutcome` | Handle requiresHuman nodes during deprovision (default: Skipped) |
 | `PendingApprovalHandler` | `check(DesiredNode, StepAction, String tenancyId) → ApprovalCheckResult` | Track approval lifecycle for provisioner-initiated PendingApproval requests |
 | `SituationRecompiler` | `recompile(String tenancyId, DesiredStateGraph, ActualState, ActiveSituation, DesiredStateGraphFactory) → Optional<CompilationResult>` | Situation-driven graph recompilation — independent of GoalCompiler. `priority()` default method for chain ordering |
 | `ConfigurationRetriever` | `retrieve(RetrievalContext, int maxResults) → List<RetrievedConfiguration>` | CBR Retrieve — find similar past configurations by fault/situation context |
@@ -134,12 +135,21 @@ This ensures no dangling dependencies and no half-removed states.
 
 ## Human Nodes
 
-`DesiredNode.requiresHuman = true` → `SimpleTransitionExecutor` delegates to `HumanNodeHandler` SPI.
-`NoOpHumanNodeHandler` (`@DefaultBean`) skips the node. `WorkItemHumanNodeHandler` (work-adapter,
-classpath-activated) creates a WorkItem via `WorkItemCreator` SPI for human provisioning.
-`CaseTransitionExecutor` (engine-adapter) generates a `humanTask` binding in the case definition —
-the engine's HITL infrastructure handles WorkItem creation and completion. The reconciliation loop
-detects human node completion on the next cycle via ActualStateAdapter.
+`DesiredNode.requiresHuman = true` → `SimpleTransitionExecutor` delegates to `HumanNodeHandler` SPI
+for both provision and deprovision. `requiresHuman` is a routing signal — it gates whether the handler
+is consulted; the handler decides what each action means for the domain. Precedence: requiresHuman >
+PendingApproval > provisioner.
+
+`NoOpHumanNodeHandler` (`@DefaultBean`) skips the node for both actions (misconfiguration signal).
+`WorkItemHumanNodeHandler` (work-adapter, classpath-activated) creates WorkItems via `WorkItemCreator`
+SPI — callerRef format: `desiredstate:<tenancyId>:<nodeId>:<action>` (action = `provision` or `deprovision`).
+WorkItem types: `desiredstate-provision`, `desiredstate-deprovision`.
+
+`CaseTransitionExecutor` (engine-adapter) separates human nodes from automated nodes for both additions
+and removals — human nodes get `humanTask` bindings (binding names: `human-provision-<nodeId>`,
+`human-deprovision-<nodeId>`). CTE does NOT call `HumanNodeHandler` — it uses the engine's HITL
+infrastructure directly. The reconciliation loop detects human node completion on the next cycle via
+ActualStateAdapter.
 
 **Approval-gated nodes:** `NodeProvisioner.provision()` may return `PendingApproval(nodeId, planReference)` →
 `SimpleTransitionExecutor` delegates to `PendingApprovalHandler` SPI. `NoOpPendingApprovalHandler` (`@DefaultBean`)

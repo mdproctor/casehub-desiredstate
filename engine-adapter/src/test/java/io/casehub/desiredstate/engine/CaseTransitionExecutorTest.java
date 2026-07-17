@@ -2,13 +2,23 @@ package io.casehub.desiredstate.engine;
 
 import io.casehub.api.context.PropagationContext;
 import io.casehub.api.engine.CaseHubRuntime;
-import io.casehub.api.model.Binding;
 import io.casehub.api.model.CaseDefinition;
 import io.casehub.api.model.HumanTaskTarget;
 import io.casehub.api.model.event.CaseEventLogRecord;
 import io.casehub.api.model.event.CaseHubEventType;
 import io.casehub.api.model.event.EventStreamType;
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.ApprovalCheckResult;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.DesiredStateGraphFactory;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeSpec;
+import io.casehub.desiredstate.api.NodeType;
+import io.casehub.desiredstate.api.OrderedStep;
+import io.casehub.desiredstate.api.StepAction;
+import io.casehub.desiredstate.api.StepOutcome;
+import io.casehub.desiredstate.api.TransitionPlan;
+import io.casehub.desiredstate.api.TransitionResult;
 import io.casehub.desiredstate.runtime.DefaultDesiredStateGraphFactory;
 import io.casehub.desiredstate.testing.MockPendingApprovalHandler;
 import org.junit.jupiter.api.BeforeEach;
@@ -329,6 +339,115 @@ class CaseTransitionExecutorTest {
         assertThat(result.outcomes().get(NodeId.of("auto")))
             .isInstanceOf(StepOutcome.Succeeded.class);
     }
+
+    @Test
+    void humanRemovals_getHumanTaskBindings() {
+        DesiredNode humanNode = new DesiredNode(
+                NodeId.of("h1"), NodeType.of("test"), new TestSpec(), true
+        );
+        DesiredNode normalNode = new DesiredNode(
+                NodeId.of("n1"), NodeType.of("test"), new TestSpec(), false
+        );
+
+        DesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+        DesiredStateGraph        graph   = factory.of(List.of(humanNode, normalNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+                List.of(
+                        new OrderedStep(humanNode, StepAction.DEPROVISION),
+                        new OrderedStep(normalNode, StepAction.DEPROVISION)
+                       ),
+                List.of(),
+                graph, graph
+        );
+
+        CaseDefinition caseDef = executor.buildCaseDefinition(plan, "exec-1");
+
+        boolean hasHumanBinding = caseDef.getBindings().stream()
+                                         .anyMatch(b -> b.getName().equals("human-deprovision-h1")
+                                                        && b.target() instanceof HumanTaskTarget);
+        assertThat(hasHumanBinding)
+                .as("Should have humanTask binding for human removal")
+                .isTrue();
+    }
+
+    @Test
+    void humanRemovals_excludedFromPruneWorkflow() {
+        DesiredNode humanNode = new DesiredNode(
+                NodeId.of("h1"), NodeType.of("test"), new TestSpec(), true
+        );
+        DesiredNode normalNode = new DesiredNode(
+                NodeId.of("n1"), NodeType.of("test"), new TestSpec(), false
+        );
+
+        DesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+        DesiredStateGraph        graph   = factory.of(List.of(humanNode, normalNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+                List.of(
+                        new OrderedStep(humanNode, StepAction.DEPROVISION),
+                        new OrderedStep(normalNode, StepAction.DEPROVISION)
+                       ),
+                List.of(),
+                graph, graph
+        );
+
+        CaseDefinition caseDef = executor.buildCaseDefinition(plan, "exec-1");
+
+        assertThat(caseDef.getWorkers())
+                .as("Prune worker should exist for normal removals only")
+                .hasSize(1);
+        assertThat(caseDef.getWorkers().get(0).name()).isEqualTo("prune");
+    }
+
+    @Test
+    void humanRemovals_markedAsSkippedInResult() {
+        DesiredNode humanNode = new DesiredNode(
+                NodeId.of("h1"), NodeType.of("test"), new TestSpec(), true
+        );
+
+        DesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+        DesiredStateGraph        graph   = factory.of(List.of(humanNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+                List.of(new OrderedStep(humanNode, StepAction.DEPROVISION)),
+                List.of(),
+                graph, graph
+        );
+
+        TransitionResult result = executor.execute(plan, "tenant1")
+                                          .await().indefinitely();
+
+        StepOutcome outcome = result.outcomes().get(NodeId.of("h1"));
+        assertThat(outcome).isInstanceOf(StepOutcome.Skipped.class);
+        assertThat(((StepOutcome.Skipped) outcome).reason()).isEqualTo("routed to WorkItem");
+    }
+
+    @Test
+    void humanAdditions_useActionNamespacedBindingNames() {
+        DesiredNode humanNode = new DesiredNode(
+                NodeId.of("h1"), NodeType.of("test"), new TestSpec(), true
+        );
+
+        DesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+        DesiredStateGraph        graph   = factory.of(List.of(humanNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+                List.of(),
+                List.of(new OrderedStep(humanNode, StepAction.PROVISION)),
+                graph, graph
+        );
+
+        CaseDefinition caseDef = executor.buildCaseDefinition(plan, "exec-1");
+
+        boolean hasNamespacedBinding = caseDef.getBindings().stream()
+                                              .anyMatch(b -> b.getName().equals("human-provision-h1")
+                                                             && b.target() instanceof HumanTaskTarget);
+        assertThat(hasNamespacedBinding)
+                .as("Human addition binding should use 'human-provision-<nodeId>' format")
+                .isTrue();
+    }
+
 
     private record TestSpec() implements NodeSpec {}
 }
