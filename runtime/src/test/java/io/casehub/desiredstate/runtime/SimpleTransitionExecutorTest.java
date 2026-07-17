@@ -1,16 +1,37 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.ApprovalCheckResult;
+import io.casehub.desiredstate.api.DeprovisionContext;
+import io.casehub.desiredstate.api.DeprovisionResult;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.DesiredStateGraphFactory;
+import io.casehub.desiredstate.api.HumanNodeHandler;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeProvisioner;
+import io.casehub.desiredstate.api.NodeSpec;
+import io.casehub.desiredstate.api.NodeType;
+import io.casehub.desiredstate.api.OrderedStep;
+import io.casehub.desiredstate.api.PendingApprovalHandler;
+import io.casehub.desiredstate.api.PlanApproval;
+import io.casehub.desiredstate.api.ProvisionContext;
+import io.casehub.desiredstate.api.ProvisionResult;
+import io.casehub.desiredstate.api.StepAction;
+import io.casehub.desiredstate.api.StepOutcome;
+import io.casehub.desiredstate.api.TransitionPlan;
+import io.casehub.desiredstate.api.TransitionResult;
 import io.smallrye.mutiny.helpers.test.UniAssertSubscriber;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SimpleTransitionExecutorTest {
 
@@ -669,4 +690,134 @@ class SimpleTransitionExecutorTest {
         assertTrue(((StepOutcome.Skipped) result.outcomes().get(NodeId.of("h1"))).reason()
             .contains("requires human"));
     }
+
+    @Test
+    void deprovision_requiresHuman_delegatesToHandler() {
+        HumanNodeHandler handler = new HumanNodeHandler() {
+            @Override
+            public StepOutcome onProvision(DesiredNode node, ProvisionContext context) {
+                return new StepOutcome.Skipped("not under test");
+            }
+
+            @Override
+            public StepOutcome onDeprovision(DesiredNode node, DeprovisionContext context) {
+                return new StepOutcome.Skipped("test deprovision handler: " + node.id().value());
+            }
+        };
+
+        var router = new DefaultNodeProvisionerRouter(List.of(mockProvisioner));
+        SimpleTransitionExecutor handlerExecutor =
+                new SimpleTransitionExecutor(router, handler, new NoOpPendingApprovalHandler());
+
+        DesiredNode humanNode = new DesiredNode(
+                NodeId.of("h1"), NodeType.of("test"), new TestSpec("human"), true
+        );
+
+        DesiredStateGraph graph = factory.of(List.of(humanNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+                List.of(new OrderedStep(humanNode, StepAction.DEPROVISION)),
+                List.of(),
+                graph, graph
+        );
+
+        TransitionResult result = handlerExecutor.execute(plan, "tenant1")
+                                                 .subscribe().withSubscriber(UniAssertSubscriber.create())
+                                                 .awaitItem()
+                                                 .getItem();
+
+        StepOutcome outcome = result.outcomes().get(NodeId.of("h1"));
+        assertInstanceOf(StepOutcome.Skipped.class, outcome);
+        assertEquals("test deprovision handler: h1",
+                     ((StepOutcome.Skipped) outcome).reason());
+
+        assertTrue(mockProvisioner.callOrder.isEmpty(),
+                   "Provisioner should NOT be called for requiresHuman deprovision");
+    }
+
+    @Test
+    void deprovision_handlerReceivesCorrectDeprovisionContext() {
+        String[]            capturedTenancyId = {null};
+        DesiredStateGraph[] capturedGraph     = {null};
+
+        HumanNodeHandler capturingHandler = new HumanNodeHandler() {
+            @Override
+            public StepOutcome onProvision(DesiredNode node, ProvisionContext context) {
+                return new StepOutcome.Skipped("not under test");
+            }
+
+            @Override
+            public StepOutcome onDeprovision(DesiredNode node, DeprovisionContext context) {
+                capturedTenancyId[0] = context.tenancyId();
+                capturedGraph[0]     = context.graph();
+                return new StepOutcome.Skipped("captured");
+            }
+        };
+
+        var router = new DefaultNodeProvisionerRouter(List.of(mockProvisioner));
+        SimpleTransitionExecutor capturingExecutor =
+                new SimpleTransitionExecutor(router, capturingHandler, new NoOpPendingApprovalHandler());
+
+        DesiredNode humanNode = new DesiredNode(
+                NodeId.of("h1"), NodeType.of("test"), new TestSpec("human"), true
+        );
+
+        DesiredStateGraph graph = factory.of(List.of(humanNode), List.of());
+
+        TransitionPlan plan = new TransitionPlan(
+                List.of(new OrderedStep(humanNode, StepAction.DEPROVISION)),
+                List.of(),
+                graph, graph
+        );
+
+        capturingExecutor.execute(plan, "my-tenant")
+                         .subscribe().withSubscriber(UniAssertSubscriber.create())
+                         .awaitItem();
+
+        assertEquals("my-tenant", capturedTenancyId[0]);
+        assertNotNull(capturedGraph[0]);
+        assertTrue(capturedGraph[0].nodes().containsKey(NodeId.of("h1")));
+    }
+
+    @Test
+    void deprovision_requiresHuman_takesPrecedence_overPendingApprovalHandler() {
+        PendingApprovalHandler handler = new PendingApprovalHandler() {
+            public ApprovalCheckResult check(DesiredNode n, StepAction a, String t) {
+                return new ApprovalCheckResult.Approved(
+                        new PlanApproval("plan", "jane", Instant.now()));
+            }
+
+            public StepOutcome recordPending(DesiredNode n, StepAction a, String t, String p) {
+                return new StepOutcome.Skipped("pending");
+            }
+
+            public void acknowledgeRejection(DesiredNode n, StepAction a, String t) {}
+        };
+
+        var router = new DefaultNodeProvisionerRouter(List.of(mockProvisioner));
+        SimpleTransitionExecutor handlerExecutor = new SimpleTransitionExecutor(
+                router, new NoOpHumanNodeHandler(), handler);
+
+        DesiredNode humanNode = new DesiredNode(
+                NodeId.of("h1"), NodeType.of("test"), new TestSpec("human"), true
+        );
+        DesiredStateGraph graph = factory.of(List.of(humanNode), List.of());
+        TransitionPlan plan = new TransitionPlan(
+                List.of(new OrderedStep(humanNode, StepAction.DEPROVISION)),
+                List.of(),
+                graph, graph
+        );
+
+        TransitionResult result = handlerExecutor.execute(plan, "tenant1")
+                                                 .subscribe().withSubscriber(UniAssertSubscriber.create())
+                                                 .awaitItem().getItem();
+
+        assertInstanceOf(StepOutcome.Skipped.class, result.outcomes().get(NodeId.of("h1")));
+        assertTrue(((StepOutcome.Skipped) result.outcomes().get(NodeId.of("h1"))).reason()
+                                                                                 .contains("requires human"));
+        assertTrue(mockProvisioner.callOrder.isEmpty(),
+                   "Provisioner should NOT be called when requiresHuman overrides approval");
+    }
+
+
 }

@@ -626,7 +626,7 @@ What this layer adds:
 - **TransitionPlanner** — diffs desired graph against actual state, produces pruning-first ordered steps; topological sort via Kahn's algorithm
 - **ReconciliationLoop** — per-tenant, dual-trigger (events debounced at 1s + periodic at 5m), state machine (IDLE→DIFFING→PLANNING→EXECUTING→RECONCILED/FAULTED); new methods: `start(tenancyId, graph, listener)`, `setListener(tenancyId, listener)`, `compareAndSetDesired(tenancyId, expected, updated)`
 - **FaultPolicyEngine** — discovers all `FaultPolicy` beans via CDI `Instance<FaultPolicy>`, runs all matching, merges mutations, detects conflicts (`ConflictingMutationException`)
-- **SimpleTransitionExecutor** — `@DefaultBean`, walks removals then additions sequentially, delegates `requiresHuman` nodes to `HumanNodeHandler` SPI
+- **SimpleTransitionExecutor** — `@DefaultBean`, walks removals then additions sequentially, delegates `requiresHuman` nodes to `HumanNodeHandler` SPI for both provision and deprovision (precedence: requiresHuman > PendingApproval > provisioner)
 - **Approval lifecycle integration (C8)** — `SimpleTransitionExecutor` wraps every provisioner call with `PendingApprovalHandler`: check before (Pending→skip, Rejected→acknowledge+fault, Approved→withApproval context), record after (PendingApproval→recordPending). `NoOpPendingApprovalHandler @DefaultBean` returns Failed on `recordPending()` — misconfiguration signal when no handler is configured to create WorkItems.
 - **Lifecycle orchestration (C9)** — `LifecycleManager` @ApplicationScoped: `start(tenancyId, CompilationResult)` extracts phases or single graph, starts reconciliation with listener; listener evaluates `CompletionCondition` after each cycle; on completion, `compareAndSetDesired()` atomically advances to next phase; `stop(tenancyId)` tears down loop and clears state.
 
@@ -977,13 +977,13 @@ Blueprint builder → GoalCompiler → immutable graph with inferred dependencie
 
 What this layer adds:
 - 🔲 **WorkItemPendingApprovalHandler** — creates a WorkItem via `WorkItemCreator` SPI when provisioner returns PendingApproval; polls `findByCallerRef()` each cycle; maps COMPLETED→Approved, REJECTED→Rejected (with `obsoleteByCallerRef` cleanup — GE-20260629-45f4be); displaces `NoOpPendingApprovalHandler` by classpath presence
-- **WorkItemHumanNodeHandler** — creates a WorkItem for `requiresHuman` nodes; displaces `NoOpHumanNodeHandler` by classpath presence
+- **WorkItemHumanNodeHandler** — creates WorkItems for `requiresHuman` nodes (both provision and deprovision); callerRef format: `desiredstate:<tenancyId>:<nodeId>:<action>`; displaces `NoOpHumanNodeHandler` by classpath presence
 
 Not closed here: blocked on casehubio/work#281 (`WorkItemRef.payload` field for data round-trip) and casehubio/work#282 (`WorkItemCreator.obsoleteByCallerRef` for rejection consumption).
 
 #### Key files
 
-- `work-adapter/src/.../WorkItemHumanNodeHandler.java` — existing, creates WorkItems for requiresHuman nodes
+- `work-adapter/src/.../WorkItemHumanNodeHandler.java` — existing, creates WorkItems for requiresHuman nodes (provision and deprovision)
 - 🔲 `work-adapter/src/.../WorkItemPendingApprovalHandler.java` — pending implementation
 
 #### Key wiring

@@ -1,8 +1,19 @@
 package io.casehub.desiredstate.work;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.DeprovisionContext;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.DesiredStateGraphFactory;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeSpec;
+import io.casehub.desiredstate.api.NodeType;
+import io.casehub.desiredstate.api.ProvisionContext;
+import io.casehub.desiredstate.api.StepOutcome;
 import io.casehub.desiredstate.runtime.DefaultDesiredStateGraphFactory;
-import io.casehub.work.api.*;
+import io.casehub.work.api.WorkItemCreateRequest;
+import io.casehub.work.api.WorkItemPriority;
+import io.casehub.work.api.WorkItemRef;
+import io.casehub.work.api.WorkItemStatus;
 import io.casehub.work.api.spi.WorkItemCreator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,7 +59,7 @@ class WorkItemHumanNodeHandlerTest {
             .isEqualTo("Human provisioning required for node thermo-1 (type: iot-device)");
         assertThat(mockCreator.lastCreateRequest.types).containsExactly("desiredstate-provision");
         assertThat(mockCreator.lastCreateRequest.callerRef)
-            .isEqualTo("desiredstate:tenant1:thermo-1");
+            .isEqualTo("desiredstate:tenant1:thermo-1:provision");
         assertThat(mockCreator.lastCreateRequest.priority).isEqualTo(WorkItemPriority.MEDIUM);
         assertThat(mockCreator.lastCreateRequest.createdBy).isEqualTo("desiredstate");
     }
@@ -57,7 +68,7 @@ class WorkItemHumanNodeHandlerTest {
     void subsequentCall_findsActiveWorkItem_doesNotCreateDuplicate() {
         UUID existingId = UUID.randomUUID();
         mockCreator.activeRef = new WorkItemRef(
-            existingId, WorkItemStatus.PENDING, "desiredstate:tenant1:thermo-1",
+            existingId, WorkItemStatus.PENDING, "desiredstate:tenant1:thermo-1:provision",
             null, null, null, null, "tenant1", null
         );
 
@@ -95,7 +106,7 @@ class WorkItemHumanNodeHandlerTest {
 
         assertThat(mockCreator.lastCreateRequest).isNotNull();
         assertThat(mockCreator.lastCreateRequest.callerRef)
-            .isEqualTo("desiredstate:tenant1:thermo-1");
+            .isEqualTo("desiredstate:tenant1:thermo-1:provision");
     }
 
     @Test
@@ -112,8 +123,8 @@ class WorkItemHumanNodeHandlerTest {
         handler.onProvision(node, new ProvisionContext("tenantB", graph));
         String refB = mockCreator.lastCreateRequest.callerRef;
 
-        assertThat(refA).isEqualTo("desiredstate:tenantA:n1");
-        assertThat(refB).isEqualTo("desiredstate:tenantB:n1");
+        assertThat(refA).isEqualTo("desiredstate:tenantA:n1:provision");
+        assertThat(refB).isEqualTo("desiredstate:tenantB:n1:provision");
         assertThat(refA).isNotEqualTo(refB);
     }
 
@@ -136,10 +147,73 @@ class WorkItemHumanNodeHandlerTest {
         handler.onProvision(nodeB, context);
         String refB = mockCreator.lastCreateRequest.callerRef;
 
-        assertThat(refA).isEqualTo("desiredstate:tenant1:a");
-        assertThat(refB).isEqualTo("desiredstate:tenant1:b");
+        assertThat(refA).isEqualTo("desiredstate:tenant1:a:provision");
+        assertThat(refB).isEqualTo("desiredstate:tenant1:b:provision");
         assertThat(refA).isNotEqualTo(refB);
     }
+
+    @Test
+    void deprovision_firstCall_createsWorkItem_returnsSkipped() {
+        DesiredNode node = new DesiredNode(
+                NodeId.of("thermo-1"), NodeType.of("iot-device"), new TestSpec("uninstall"), true
+        );
+        DesiredStateGraph  graph   = graphFactory.of(List.of(node), List.of());
+        DeprovisionContext context = new DeprovisionContext("tenant1", graph);
+
+        StepOutcome outcome = handler.onDeprovision(node, context);
+
+        assertThat(outcome).isInstanceOf(StepOutcome.Skipped.class);
+        assertThat(((StepOutcome.Skipped) outcome).reason())
+                .startsWith("pending human action: WorkItem ");
+
+        assertThat(mockCreator.lastCreateRequest).isNotNull();
+        assertThat(mockCreator.lastCreateRequest.title).isEqualTo("Deprovision: thermo-1");
+        assertThat(mockCreator.lastCreateRequest.description)
+                .isEqualTo("Human deprovision required for node thermo-1 (type: iot-device)");
+        assertThat(mockCreator.lastCreateRequest.types).containsExactly("desiredstate-deprovision");
+        assertThat(mockCreator.lastCreateRequest.callerRef)
+                .isEqualTo("desiredstate:tenant1:thermo-1:deprovision");
+        assertThat(mockCreator.lastCreateRequest.priority).isEqualTo(WorkItemPriority.MEDIUM);
+        assertThat(mockCreator.lastCreateRequest.createdBy).isEqualTo("desiredstate");
+    }
+
+    @Test
+    void deprovision_subsequentCall_findsActiveWorkItem_doesNotCreateDuplicate() {
+        UUID existingId = UUID.randomUUID();
+        mockCreator.activeRef = new WorkItemRef(
+                existingId, WorkItemStatus.PENDING, "desiredstate:tenant1:thermo-1:deprovision",
+                null, null, null, null, "tenant1", null
+        );
+
+        DesiredNode node = new DesiredNode(
+                NodeId.of("thermo-1"), NodeType.of("iot-device"), new TestSpec("uninstall"), true
+        );
+        DesiredStateGraph  graph   = graphFactory.of(List.of(node), List.of());
+        DeprovisionContext context = new DeprovisionContext("tenant1", graph);
+
+        StepOutcome outcome = handler.onDeprovision(node, context);
+
+        assertThat(outcome).isInstanceOf(StepOutcome.Skipped.class);
+        assertThat(((StepOutcome.Skipped) outcome).reason())
+                .isEqualTo("pending human action: WorkItem " + existingId);
+
+        assertThat(mockCreator.lastCreateRequest).isNull();
+    }
+
+    @Test
+    void provision_callerRef_includesActionSuffix() {
+        DesiredNode node = new DesiredNode(
+                NodeId.of("n1"), NodeType.of("test"), new TestSpec("v"), true
+        );
+        DesiredStateGraph graph   = graphFactory.of(List.of(node), List.of());
+        ProvisionContext  context = new ProvisionContext("tenant1", graph);
+
+        handler.onProvision(node, context);
+
+        assertThat(mockCreator.lastCreateRequest.callerRef)
+                .isEqualTo("desiredstate:tenant1:n1:provision");
+    }
+
 
     static class MockWorkItemCreator implements WorkItemCreator {
         WorkItemCreateRequest lastCreateRequest;

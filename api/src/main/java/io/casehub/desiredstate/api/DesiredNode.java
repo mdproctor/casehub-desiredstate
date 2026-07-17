@@ -4,7 +4,7 @@ import java.util.Objects;
 
 /**
  * A node in the desired-state graph: what should exist, its type, its specification,
- * and whether provisioning requires human approval.
+ * and whether this node's lifecycle actions require human handling.
  */
 public record DesiredNode(NodeId id, NodeType type, NodeSpec spec, boolean requiresHuman) {
 
