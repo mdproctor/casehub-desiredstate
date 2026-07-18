@@ -1,12 +1,29 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.ActualState;
+import io.casehub.desiredstate.api.ActualStateAdapter;
+import io.casehub.desiredstate.api.ActualStateAdapterRouter;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.NodeId;
+import io.casehub.desiredstate.api.NodeStatus;
+import io.casehub.desiredstate.api.NodeType;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 
 public class DefaultActualStateAdapterRouter implements ActualStateAdapterRouter {
 
     private final Map<NodeType, ActualStateAdapter> routing;
+
+
+    protected DefaultActualStateAdapterRouter() {
+        this.routing = Map.of();
+    }
 
     public DefaultActualStateAdapterRouter(Collection<ActualStateAdapter> adapters) {
         Map<NodeType, ActualStateAdapter> table = new LinkedHashMap<>();

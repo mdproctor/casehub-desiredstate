@@ -16,6 +16,11 @@ public class DefaultMergedEventSource implements MergedEventSource {
 
     private final List<EventSource> sources;
 
+
+    protected DefaultMergedEventSource() {
+        this.sources = List.of();
+    }
+
     public DefaultMergedEventSource(Collection<EventSource> sources) {
         this.sources = List.copyOf(sources);
     }

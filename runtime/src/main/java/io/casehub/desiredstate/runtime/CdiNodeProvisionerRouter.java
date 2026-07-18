@@ -11,6 +11,10 @@ import java.util.stream.StreamSupport;
 @ApplicationScoped
 public class CdiNodeProvisionerRouter extends DefaultNodeProvisionerRouter {
 
+
+    protected CdiNodeProvisionerRouter() {
+    }
+
     @Inject
     public CdiNodeProvisionerRouter(Instance<NodeProvisioner> provisioners,
                                      PreferenceProvider preferenceProvider) {
