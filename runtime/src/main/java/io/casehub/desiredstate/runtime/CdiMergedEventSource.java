@@ -10,6 +10,10 @@ import java.util.stream.StreamSupport;
 @ApplicationScoped
 public class CdiMergedEventSource extends DefaultMergedEventSource {
 
+
+    protected CdiMergedEventSource() {
+    }
+
     @Inject
     public CdiMergedEventSource(Instance<EventSource> sources) {
         super(StreamSupport.stream(sources.spliterator(), false).toList());

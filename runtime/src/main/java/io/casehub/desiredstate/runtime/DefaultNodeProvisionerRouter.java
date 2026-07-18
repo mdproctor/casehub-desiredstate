@@ -1,13 +1,23 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.DeprovisionContext;
+import io.casehub.desiredstate.api.DeprovisionResult;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.NodeProvisioner;
+import io.casehub.desiredstate.api.NodeProvisionerRouter;
+import io.casehub.desiredstate.api.NodeType;
+import io.casehub.desiredstate.api.ProvisionContext;
+import io.casehub.desiredstate.api.ProvisionResult;
 import io.casehub.platform.api.preferences.DurationPreference;
 import io.casehub.platform.api.preferences.PreferenceProvider;
 import io.casehub.platform.api.preferences.Preferences;
 import io.casehub.platform.api.preferences.SettingsScope;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 
 public class DefaultNodeProvisionerRouter implements NodeProvisionerRouter {
 
@@ -16,6 +26,12 @@ public class DefaultNodeProvisionerRouter implements NodeProvisionerRouter {
 
     private final Map<NodeType, NodeProvisioner> routing;
     private final PreferenceProvider preferenceProvider;
+
+
+    protected DefaultNodeProvisionerRouter() {
+        this.routing            = Map.of();
+        this.preferenceProvider = null;
+    }
 
     // No-arg PreferenceProvider constructor for tests without Preferences
     public DefaultNodeProvisionerRouter(Collection<NodeProvisioner> provisioners) {

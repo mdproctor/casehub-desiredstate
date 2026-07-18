@@ -10,6 +10,10 @@ import java.util.stream.StreamSupport;
 @ApplicationScoped
 public class CdiActualStateAdapterRouter extends DefaultActualStateAdapterRouter {
 
+
+    protected CdiActualStateAdapterRouter() {
+    }
+
     @Inject
     public CdiActualStateAdapterRouter(Instance<ActualStateAdapter> adapters) {
         super(StreamSupport.stream(adapters.spliterator(), false).toList());
