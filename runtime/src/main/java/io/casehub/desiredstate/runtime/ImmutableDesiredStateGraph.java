@@ -1,8 +1,21 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.*;
+import io.casehub.desiredstate.api.CyclicDependencyException;
+import io.casehub.desiredstate.api.DanglingDependencyException;
+import io.casehub.desiredstate.api.Dependency;
+import io.casehub.desiredstate.api.DesiredNode;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.GraphMutation;
+import io.casehub.desiredstate.api.NodeId;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Immutable desired-state graph backed by dual adjacency maps (forward deps + reverse deps),
@@ -14,29 +27,52 @@ import java.util.*;
 final class ImmutableDesiredStateGraph implements DesiredStateGraph {
 
     private final Map<NodeId, DesiredNode> nodes;
-    /** forward edges: node → set of nodes it depends on */
+    /**
+     * forward edges: node → set of nodes it depends on
+     */
     private final Map<NodeId, Set<NodeId>> forwardEdges;
-    /** reverse edges: node → set of nodes that depend on it */
+    /**
+     * reverse edges: node → set of nodes that depend on it
+     */
     private final Map<NodeId, Set<NodeId>> reverseEdges;
-    private final int version;
+    private final int                      version;
 
     ImmutableDesiredStateGraph(
             Map<NodeId, DesiredNode> nodes,
             Map<NodeId, Set<NodeId>> forwardEdges,
             Map<NodeId, Set<NodeId>> reverseEdges,
             int version) {
-        this.nodes = Map.copyOf(nodes);
+        this.nodes        = Map.copyOf(nodes);
         this.forwardEdges = deepCopyEdges(forwardEdges);
         this.reverseEdges = deepCopyEdges(reverseEdges);
-        this.version = version;
+        this.version      = version;
     }
 
-    /** Empty graph at version 0. */
+    /**
+     * Empty graph at version 0.
+     */
     static ImmutableDesiredStateGraph empty() {
         return new ImmutableDesiredStateGraph(Map.of(), Map.of(), Map.of(), 0);
     }
 
     // --- DesiredStateGraph interface ---
+
+    private static Map<NodeId, Set<NodeId>> deepCopyEdges(Map<NodeId, Set<NodeId>> edges) {
+        if (edges.isEmpty()) {return Map.of();}
+        var copy = new LinkedHashMap<NodeId, Set<NodeId>>();
+        for (var entry : edges.entrySet()) {
+            copy.put(entry.getKey(), Set.copyOf(entry.getValue()));
+        }
+        return Map.copyOf(copy);
+    }
+
+    private static Map<NodeId, Set<NodeId>> mutableEdges(Map<NodeId, Set<NodeId>> edges) {
+        var copy = new LinkedHashMap<NodeId, Set<NodeId>>();
+        for (var entry : edges.entrySet()) {
+            copy.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
+        }
+        return copy;
+    }
 
     @Override
     public Map<NodeId, DesiredNode> nodes() {
@@ -91,6 +127,8 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
         return Set.copyOf(result);
     }
 
+    // --- Mutation methods (return new instances) ---
+
     @Override
     public int version() {
         return version;
@@ -100,8 +138,6 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
     public boolean isEmpty() {
         return nodes.isEmpty();
     }
-
-    // --- Mutation methods (return new instances) ---
 
     @Override
     public DesiredStateGraph withNode(DesiredNode node) {
@@ -125,7 +161,7 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
                 Set<NodeId> revSet = newReverse.get(dep);
                 if (revSet != null) {
                     revSet.remove(id);
-                    if (revSet.isEmpty()) newReverse.remove(dep);
+                    if (revSet.isEmpty()) {newReverse.remove(dep);}
                 }
             }
         }
@@ -137,7 +173,7 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
                 Set<NodeId> fwdSet = newForward.get(dependent);
                 if (fwdSet != null) {
                     fwdSet.remove(id);
-                    if (fwdSet.isEmpty()) newForward.remove(dependent);
+                    if (fwdSet.isEmpty()) {newForward.remove(dependent);}
                 }
             }
         }
@@ -148,7 +184,7 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
     @Override
     public DesiredStateGraph withDependency(Dependency dep) {
         NodeId from = dep.from();
-        NodeId to = dep.to();
+        NodeId to   = dep.to();
 
         // Validate both nodes exist
         if (!nodes.containsKey(from)) {
@@ -178,7 +214,7 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
     @Override
     public DesiredStateGraph withoutDependency(Dependency dep) {
         NodeId from = dep.from();
-        NodeId to = dep.to();
+        NodeId to   = dep.to();
 
         var newForward = mutableEdges(forwardEdges);
         var newReverse = mutableEdges(reverseEdges);
@@ -186,13 +222,13 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
         Set<NodeId> fwdSet = newForward.get(from);
         if (fwdSet != null) {
             fwdSet.remove(to);
-            if (fwdSet.isEmpty()) newForward.remove(from);
+            if (fwdSet.isEmpty()) {newForward.remove(from);}
         }
 
         Set<NodeId> revSet = newReverse.get(to);
         if (revSet != null) {
             revSet.remove(from);
-            if (revSet.isEmpty()) newReverse.remove(to);
+            if (revSet.isEmpty()) {newReverse.remove(to);}
         }
 
         return new ImmutableDesiredStateGraph(nodes, newForward, newReverse, version + 1);
@@ -215,17 +251,18 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
         };
     }
 
+    // --- Cycle detection ---
+
     @Override
     public DesiredStateGraph overlay(DesiredStateGraph other) {
-        // Validate shared nodes have equal specs
         for (var entry : other.nodes().entrySet()) {
-            NodeId id = entry.getKey();
+            NodeId      id        = entry.getKey();
             DesiredNode otherNode = entry.getValue();
-            DesiredNode thisNode = nodes.get(id);
-            if (thisNode != null && !thisNode.spec().equals(otherNode.spec())) {
+            DesiredNode thisNode  = nodes.get(id);
+            if (thisNode != null && !thisNode.equals(otherNode)) {
                 throw new IllegalArgumentException(
                         "Overlay conflict for node " + id.value() +
-                        ": specs differ — " + thisNode.spec() + " vs " + otherNode.spec());
+                        ": nodes differ — " + thisNode + " vs " + otherNode);
             }
         }
 
@@ -265,7 +302,7 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
         return result;
     }
 
-    // --- Cycle detection ---
+    // --- Internal helpers ---
 
     /**
      * DFS cycle detection: starting from {@code to}, follow forward edges.
@@ -274,7 +311,7 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
      */
     private void detectCycle(NodeId from, NodeId to, Map<NodeId, Set<NodeId>> edges) {
         var visited = new LinkedHashSet<NodeId>();
-        var stack = new ArrayDeque<NodeId>();
+        var stack   = new ArrayDeque<NodeId>();
         stack.push(to);
 
         while (!stack.isEmpty()) {
@@ -300,10 +337,12 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
         }
     }
 
-    /** BFS to find a path from start to end following forward edges. */
+    /**
+     * BFS to find a path from start to end following forward edges.
+     */
     private List<NodeId> findPath(NodeId start, NodeId end, Map<NodeId, Set<NodeId>> edges) {
         var parents = new LinkedHashMap<NodeId, NodeId>();
-        var queue = new ArrayDeque<NodeId>();
+        var queue   = new ArrayDeque<NodeId>();
         queue.add(start);
         parents.put(start, null);
 
@@ -329,24 +368,5 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
         }
         // Should not reach here if cycle was detected
         return List.of(start, end);
-    }
-
-    // --- Internal helpers ---
-
-    private static Map<NodeId, Set<NodeId>> deepCopyEdges(Map<NodeId, Set<NodeId>> edges) {
-        if (edges.isEmpty()) return Map.of();
-        var copy = new LinkedHashMap<NodeId, Set<NodeId>>();
-        for (var entry : edges.entrySet()) {
-            copy.put(entry.getKey(), Set.copyOf(entry.getValue()));
-        }
-        return Map.copyOf(copy);
-    }
-
-    private static Map<NodeId, Set<NodeId>> mutableEdges(Map<NodeId, Set<NodeId>> edges) {
-        var copy = new LinkedHashMap<NodeId, Set<NodeId>>();
-        for (var entry : edges.entrySet()) {
-            copy.put(entry.getKey(), new LinkedHashSet<>(entry.getValue()));
-        }
-        return copy;
     }
 }
