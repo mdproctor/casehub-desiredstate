@@ -315,6 +315,29 @@ class ImmutableDesiredStateGraphTest {
                 .hasMessageContaining("A");
     }
 
+    @Test
+    void overlay_shared_nodes_with_different_humanGating_throws() {
+        var spec = new TestSpec("shared");
+        var g1   = factory.empty().withNode(new DesiredNode(NodeId.of("A"), ROOM, spec, HumanGating.NONE));
+        var g2   = factory.empty().withNode(new DesiredNode(NodeId.of("A"), ROOM, spec, HumanGating.ALL));
+
+        assertThatThrownBy(() -> g1.overlay(g2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("A");
+    }
+
+    @Test
+    void overlay_shared_nodes_with_different_type_throws() {
+        var spec = new TestSpec("shared");
+        var g1   = factory.empty().withNode(new DesiredNode(NodeId.of("A"), ROOM, spec, HumanGating.NONE));
+        var g2   = factory.empty().withNode(new DesiredNode(NodeId.of("A"), CREATURE, spec, HumanGating.NONE));
+
+        assertThatThrownBy(() -> g1.overlay(g2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("A");
+    }
+
+
     @Test void overlay_merges_dependencies_from_both_graphs() {
         var spec = new TestSpec("shared");
         var g1 = factory.empty()
