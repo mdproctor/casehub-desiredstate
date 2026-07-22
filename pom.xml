@@ -35,6 +35,7 @@
 
     <properties>
         <jandex-maven-plugin.version>3.3.1</jandex-maven-plugin.version>
+        <jackson-jq.version>1.6.2</jackson-jq.version>
     </properties>
 
     <dependencyManagement>
@@ -70,6 +71,11 @@
                 <groupId>io.casehub</groupId>
                 <artifactId>casehub-desiredstate-ras</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.thisptr</groupId>
+                <artifactId>jackson-jq</artifactId>
+                <version>${jackson-jq.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
