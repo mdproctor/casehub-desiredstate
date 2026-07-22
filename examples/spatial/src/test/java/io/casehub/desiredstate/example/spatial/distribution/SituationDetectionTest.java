@@ -12,7 +12,7 @@ import io.casehub.ras.persistence.memory.InMemorySituationStore;
 import io.casehub.ras.runtime.DefaultRasTriggerPolicy;
 import io.casehub.ras.runtime.RasMetrics;
 import io.casehub.ras.runtime.SituationEvaluator;
-import io.casehub.ras.runtime.TestSituationDefinitionRegistry;
+import io.casehub.ras.runtime.SituationDefinitionRegistry;
 import io.casehub.ras.testing.MockCaseTrigger;
 import io.cloudevents.CloudEvent;
 import jakarta.enterprise.event.Event;
@@ -99,7 +99,7 @@ class SituationDetectionTest {
             () -> List.of(new SituationRegistration(situationDef))
         );
         var ganglia = List.<Ganglion>of(ganglion);
-        var registry = TestSituationDefinitionRegistry.create(providers, ganglia);
+        var registry = SituationDefinitionRegistry.forTesting(providers, ganglia);
 
         // Wire SituationEvaluator with all dependencies
         evaluator = new SituationEvaluator(
