@@ -60,7 +60,7 @@ public class CbrSituationRecompiler implements SituationRecompiler {
             String tenancyId,
             DesiredStateGraph current, ActualState actual,
             ActiveSituation situation, DesiredStateGraphFactory factory) {
-        CbrConfiguration config = resolveConfiguration();
+        CbrConfiguration config = resolveConfiguration(tenancyId);
 
         RetrievalContext context = RetrievalContext.forSituation(current, actual, situation);
 
@@ -106,8 +106,8 @@ public class CbrSituationRecompiler implements SituationRecompiler {
         return Optional.of(CompilationResult.single(selected.graph()));
     }
 
-    private CbrConfiguration resolveConfiguration() {
-        Preferences prefs = preferenceProvider.resolve(SettingsScope.root());
+    private CbrConfiguration resolveConfiguration(String tenancyId) {
+        Preferences prefs = preferenceProvider.resolve(SettingsScope.root(tenancyId));
         double minRetrieval = prefs.getOrDefault(DesiredStatePreferenceKeys.CBR_MIN_RETRIEVAL_CONFIDENCE).value();
         double minAdaptation = prefs.getOrDefault(DesiredStatePreferenceKeys.CBR_MIN_ADAPTATION_CONFIDENCE).value();
         int maxCandidates = prefs.getOrDefault(DesiredStatePreferenceKeys.CBR_MAX_CANDIDATES).value();

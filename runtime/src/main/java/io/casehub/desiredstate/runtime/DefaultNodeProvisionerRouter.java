@@ -86,7 +86,7 @@ public class DefaultNodeProvisionerRouter implements NodeProvisionerRouter {
     @Override
     public Duration resyncIntervalFor(NodeType type) {
         if (preferenceProvider != null) {
-            Preferences prefs = preferenceProvider.resolve(SettingsScope.root());
+            Preferences prefs = preferenceProvider.resolve(SettingsScope.root(""));
             DurationPreference override = prefs.get(
                 DesiredStatePreferenceKeys.RESYNC_INTERVAL, type.value());
             if (override != null) {

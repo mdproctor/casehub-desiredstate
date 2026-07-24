@@ -51,7 +51,7 @@ public class CbrFaultPolicy implements FaultPolicy {
 
     @Override
     public List<GraphMutation> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
-        CbrConfiguration config = resolveConfiguration();
+        CbrConfiguration config = resolveConfiguration(tenancyId);
 
         RetrievalContext context = RetrievalContext.forFault(current, actual, event);
 
@@ -96,8 +96,8 @@ public class CbrFaultPolicy implements FaultPolicy {
         return mutations;
     }
 
-    private CbrConfiguration resolveConfiguration() {
-        Preferences prefs = preferenceProvider.resolve(SettingsScope.root());
+    private CbrConfiguration resolveConfiguration(String tenancyId) {
+        Preferences prefs = preferenceProvider.resolve(SettingsScope.root(tenancyId));
         double minRetrieval = prefs.getOrDefault(DesiredStatePreferenceKeys.CBR_MIN_RETRIEVAL_CONFIDENCE).value();
         double minAdaptation = prefs.getOrDefault(DesiredStatePreferenceKeys.CBR_MIN_ADAPTATION_CONFIDENCE).value();
         int maxCandidates = prefs.getOrDefault(DesiredStatePreferenceKeys.CBR_MAX_CANDIDATES).value();
