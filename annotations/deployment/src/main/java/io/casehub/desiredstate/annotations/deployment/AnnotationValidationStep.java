@@ -1,11 +1,13 @@
 package io.casehub.desiredstate.annotations.deployment;
 
+import io.casehub.desiredstate.annotations.runtime.GraphPatternMatcher;
 import io.casehub.desiredstate.api.FaultType;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.Produce;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.ServiceStartBuildItem;
 import org.jboss.jandex.AnnotationInstance;
+import org.jboss.jandex.AnnotationTarget;
 import org.jboss.jandex.AnnotationValue;
 import org.jboss.jandex.ClassInfo;
 import org.jboss.jandex.DotName;
@@ -139,6 +141,7 @@ public class AnnotationValidationStep {
         }
 
         validateDeclareNodes(index, graphsByKey, errors, warnings);
+        validateStandaloneGraphRules(index, interfacesByKey.keySet(), errors, warnings);
 
         for (MergedGraph mg : graphsByKey.values()) {
             mg.validateDuplicateIds(errors);
@@ -339,6 +342,66 @@ public class AnnotationValidationStep {
         }
     }
 
+    private void validateStandaloneGraphRules(IndexView index,
+            Set<String> knownGraphKeys, List<String> errors, List<String> warnings) {
+        for (AnnotationInstance grAnn : index.getAnnotations(GRAPH_RULE)) {
+            if (grAnn.target().kind() != AnnotationTarget.Kind.CLASS) continue;
+            ClassInfo classInfo = grAnn.target().asClass();
+
+            if (java.lang.reflect.Modifier.isAbstract(classInfo.flags())
+                    || java.lang.reflect.Modifier.isInterface(classInfo.flags())) {
+                errors.add("@GraphRule class " + classInfo.name().local()
+                        + " must be concrete with a no-arg constructor");
+                continue;
+            }
+
+            boolean hasNoArgCtor = classInfo.constructors().stream()
+                    .anyMatch(c -> c.parametersCount() == 0);
+            if (!hasNoArgCtor) {
+                errors.add("@GraphRule class " + classInfo.name().local()
+                        + " must be concrete with a no-arg constructor");
+                continue;
+            }
+
+            AnnotationValue graphVal = grAnn.value("graph");
+            if (graphVal == null || graphVal.asStringArray().length == 0) {
+                errors.add("@GraphRule on class " + classInfo.name().local()
+                        + " requires graph attribute");
+                continue;
+            }
+
+            String[] patterns = graphVal.asStringArray();
+            boolean hasInclude = false;
+            for (String p : patterns) {
+                if (!p.startsWith("!")) { hasInclude = true; break; }
+            }
+            if (!hasInclude) {
+                errors.add("@GraphRule on class " + classInfo.name().local()
+                        + " graph has no include patterns — at least one non-! entry required");
+                continue;
+            }
+
+            boolean matchesAny = knownGraphKeys.stream()
+                    .anyMatch(k -> GraphPatternMatcher.matches(patterns, k));
+            if (!matchesAny) {
+                warnings.add("@GraphRule class " + classInfo.name().local()
+                        + " graph '" + String.join(", ", patterns)
+                        + "' does not match any declared graph");
+            }
+
+            for (MethodInfo method : classInfo.methods()) {
+                if (!method.hasAnnotation(GRAPH_RULE)) continue;
+                if (!java.lang.reflect.Modifier.isPublic(method.flags())) {
+                    errors.add("@GraphRule on '" + method.name() + "' in "
+                            + classInfo.name().local() + " must be public");
+                }
+                if (!method.returnType().name().equals(JAVA_LIST)) {
+                    errors.add("@GraphRule '" + method.name() + "' in "
+                            + classInfo.name().local() + " must return List<GraphMutation>");
+                }
+            }
+        }
+    }
 
     private void validateFaultPolicyOnMethod(MethodInfo method, ClassInfo dsClass,
             IndexView index, List<String> errors) {

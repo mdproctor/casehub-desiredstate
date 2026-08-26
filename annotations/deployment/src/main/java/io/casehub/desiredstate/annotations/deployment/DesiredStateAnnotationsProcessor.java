@@ -6,6 +6,7 @@ import io.casehub.desiredstate.annotations.runtime.Direction;
 import io.casehub.desiredstate.annotations.runtime.FaultPolicyDescriptor;
 import io.casehub.desiredstate.annotations.runtime.GoalMethodDescriptor;
 import io.casehub.desiredstate.annotations.runtime.GraphDescriptor;
+import io.casehub.desiredstate.annotations.runtime.GraphPatternMatcher;
 import io.casehub.desiredstate.annotations.runtime.GraphRuleDescriptor;
 import io.casehub.desiredstate.annotations.runtime.NodeDescriptor;
 import io.casehub.desiredstate.annotations.runtime.PatternKind;
@@ -90,12 +91,27 @@ public class DesiredStateAnnotationsProcessor {
         Map<String, List<NodeDescriptor.ClassNode>> classNodesByGraph  = scanDeclareNodes(index);
         Set<String>                                 interfaceGraphKeys = new HashSet<>();
 
+        List<Map.Entry<String[], List<GraphRuleDescriptor>>> standaloneRules = scanStandaloneGraphRules(index);
+
         for (AnnotationInstance dsAnn : index.getAnnotations(DESIRED_STATE)) {
             ClassInfo       dsClass    = dsAnn.target().asClass();
             GraphDescriptor descriptor = buildGraphDescriptor(dsAnn, dsClass, index);
 
             String graphKey = descriptor.namespace() + ":" + descriptor.name();
             interfaceGraphKeys.add(graphKey);
+
+            List<GraphRuleDescriptor> mergedRules = new ArrayList<>(descriptor.graphRules());
+            for (var srEntry : standaloneRules) {
+                if (GraphPatternMatcher.matches(srEntry.getKey(), graphKey)) {
+                    mergedRules.addAll(srEntry.getValue());
+                }
+            }
+            if (mergedRules.size() != descriptor.graphRules().size()) {
+                descriptor = new GraphDescriptor(descriptor.namespace(), descriptor.name(),
+                        descriptor.interfaceName(), descriptor.implClassName(),
+                        descriptor.nodes(), descriptor.dependencies(),
+                        descriptor.faultPolicies(), descriptor.goalMethod(), mergedRules);
+            }
 
             List<NodeDescriptor.ClassNode> classNodes = classNodesByGraph.getOrDefault(graphKey, List.of());
             if (!classNodes.isEmpty()) {
@@ -489,6 +505,32 @@ public class DesiredStateAnnotationsProcessor {
         return null;
     }
 
+
+    private List<Map.Entry<String[], List<GraphRuleDescriptor>>> scanStandaloneGraphRules(IndexView index) {
+        List<Map.Entry<String[], List<GraphRuleDescriptor>>> result = new ArrayList<>();
+        for (AnnotationInstance grAnn : index.getAnnotations(GRAPH_RULE)) {
+            if (grAnn.target().kind() != AnnotationTarget.Kind.CLASS) continue;
+            ClassInfo classInfo = grAnn.target().asClass();
+            AnnotationValue graphVal = grAnn.value("graph");
+            if (graphVal == null) continue;
+            String[] graphPatterns = graphVal.asStringArray();
+            if (graphPatterns.length == 0) continue;
+
+            List<GraphRuleDescriptor> classRules = new ArrayList<>();
+            for (MethodInfo method : classInfo.methods()) {
+                if (method.hasAnnotation(GRAPH_RULE)
+                        && !java.lang.reflect.Modifier.isStatic(method.flags())
+                        && java.lang.reflect.Modifier.isPublic(method.flags())) {
+                    classRules.add(buildGraphRuleDescriptor(method, index,
+                            classInfo.name().toString()));
+                }
+            }
+            if (!classRules.isEmpty()) {
+                result.add(Map.entry(graphPatterns, classRules));
+            }
+        }
+        return result;
+    }
 
     private static String stringValueOrDefault(
             AnnotationInstance ann, IndexView index, String name, String defaultValue) {
