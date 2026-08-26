@@ -298,7 +298,8 @@ public class DesiredStateAnnotationsProcessor {
             for (AnnotationInstance tierAnn : tiersVal.asNestedArray()) {
                 int    threshold = tierAnn.value("threshold").asInt();
                 String review    = tierAnn.value("review").asString();
-                tiers.add(new TierDescriptor(threshold, review));
+                String nodeType  = stringValueOrDefault(tierAnn, index, "nodeType", "");
+                tiers.add(new TierDescriptor(threshold, review, nodeType));
             }
         }
 

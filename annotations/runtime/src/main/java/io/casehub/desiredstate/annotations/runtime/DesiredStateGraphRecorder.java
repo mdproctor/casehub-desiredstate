@@ -194,16 +194,28 @@ public class DesiredStateGraphRecorder {
             for (TierDescriptor td : descriptor.tiers()) {
                 Method reviewMethod = implClass.getMethod(td.reviewMethodName(),
                         FaultEvent.class, DesiredStateGraph.class);
+                io.casehub.desiredstate.api.ReviewSpecFactory reviewFactory = (event, graph) -> {
+                    try {
+                        return (NodeSpec) reviewMethod.invoke(instance, event, graph);
+                    } catch (Exception e) {
+                        throw new RuntimeException("Review method invocation failed: "
+                                + reviewMethod.getName(), e);
+                    }
+                };
+                if (!td.nodeType().isEmpty()) {
+                    NodeType declaredType = NodeType.of(td.nodeType());
+                    io.casehub.desiredstate.api.ReviewSpecFactory delegate = reviewFactory;
+                    reviewFactory = new io.casehub.desiredstate.api.ReviewSpecFactory() {
+                        @Override
+                        public NodeSpec create(FaultEvent event, DesiredStateGraph graph) {
+                            return delegate.create(event, graph);
+                        }
+                        @Override
+                        public NodeType nodeType() { return declaredType; }
+                    };
+                }
                 builder.tier(td.threshold(),
-                        io.casehub.desiredstate.api.FaultPolicy.addReviewNode(
-                                (event, graph) -> {
-                                    try {
-                                        return (NodeSpec) reviewMethod.invoke(instance, event, graph);
-                                    } catch (Exception e) {
-                                        throw new RuntimeException("Review method invocation failed: "
-                                                + reviewMethod.getName(), e);
-                                    }
-                                }));
+                        io.casehub.desiredstate.api.FaultPolicy.addReviewNode(reviewFactory));
             }
 
             for (Method m : implClass.getMethods()) {

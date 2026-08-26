@@ -9,4 +9,5 @@ import java.lang.annotation.Target;
 public @interface Tier {
     int threshold();
     String review();
+    String nodeType() default "";
 }
