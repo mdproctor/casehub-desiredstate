@@ -58,6 +58,8 @@ public class AnnotationValidationStep {
             "io.casehub.desiredstate.annotations.Customize");
     private static final DotName GRAPH_RULE   = DotName.createSimple(
             "io.casehub.desiredstate.annotations.GraphRule");
+    private static final DotName GRAPH_INVARIANT = DotName.createSimple(
+            "io.casehub.desiredstate.annotations.GraphInvariant");
     private static final DotName MATCH        = DotName.createSimple(
             "io.casehub.desiredstate.annotations.Match");
     private static final DotName DIRECT_DEP   = DotName.createSimple(
@@ -141,6 +143,7 @@ public class AnnotationValidationStep {
             validateTierReviewMethods(dsClass, index, errors);
             validateGoalMethod(dsClass, index, errors);
             validateGraphRules(dsClass, index, errors);
+            validateGraphInvariants(dsClass, index, errors);
 
             if (localNodeIds.isEmpty()) {
                 warnings.add("@DesiredState '" + dsClass.name().local()
@@ -422,6 +425,27 @@ public class AnnotationValidationStep {
                 }
             }
             previousParamName = paramName;
+        }
+    }
+
+    private void validateGraphInvariants(ClassInfo dsClass, IndexView index,
+            List<String> errors) {
+        for (MethodInfo method : dsClass.methods()) {
+            if (!method.hasAnnotation(GRAPH_INVARIANT)) continue;
+
+            if (!java.lang.reflect.Modifier.isStatic(method.flags())) {
+                errors.add("@GraphInvariant on '" + method.name() + "' in "
+                        + dsClass.name().local() + " must be a static method");
+            }
+
+            boolean isImperative = method.parametersCount() == 1
+                    && method.parameterType(0).name().equals(DESIRED_STATE_GRAPH);
+            if (!isImperative && !method.returnType().name().toString().equals("void")) {
+                errors.add("@GraphInvariant '" + method.name()
+                        + "' parameterized method must return void");
+            }
+
+            validatePatternParameters(method, dsClass.name().local(), index, errors);
         }
     }
 

@@ -6,6 +6,7 @@ import io.casehub.desiredstate.annotations.runtime.Direction;
 import io.casehub.desiredstate.annotations.runtime.FaultPolicyDescriptor;
 import io.casehub.desiredstate.annotations.runtime.GoalMethodDescriptor;
 import io.casehub.desiredstate.annotations.runtime.GraphDescriptor;
+import io.casehub.desiredstate.annotations.runtime.GraphInvariantDescriptor;
 import io.casehub.desiredstate.annotations.runtime.GraphPatternMatcher;
 import io.casehub.desiredstate.annotations.runtime.GraphRuleDescriptor;
 import io.casehub.desiredstate.annotations.runtime.NodeDescriptor;
@@ -78,6 +79,8 @@ public class DesiredStateAnnotationsProcessor {
             "io.casehub.desiredstate.annotations.Reaches");
     private static final DotName NOT_EXISTS = DotName.createSimple(
             "io.casehub.desiredstate.annotations.NotExists");
+    private static final DotName GRAPH_INVARIANT = DotName.createSimple(
+            "io.casehub.desiredstate.annotations.GraphInvariant");
 
 
     @BuildStep
@@ -92,6 +95,7 @@ public class DesiredStateAnnotationsProcessor {
         Set<String>                                 interfaceGraphKeys = new HashSet<>();
 
         List<Map.Entry<String[], List<GraphRuleDescriptor>>> standaloneRules = scanStandaloneGraphRules(index);
+        List<Map.Entry<String[], List<GraphInvariantDescriptor>>> standaloneInvariants = scanStandaloneGraphInvariants(index);
 
         for (AnnotationInstance dsAnn : index.getAnnotations(DESIRED_STATE)) {
             ClassInfo       dsClass    = dsAnn.target().asClass();
@@ -106,12 +110,19 @@ public class DesiredStateAnnotationsProcessor {
                     mergedRules.addAll(srEntry.getValue());
                 }
             }
-            if (mergedRules.size() != descriptor.graphRules().size()) {
+            List<GraphInvariantDescriptor> mergedInvariants = new ArrayList<>(descriptor.graphInvariants());
+            for (var siEntry : standaloneInvariants) {
+                if (GraphPatternMatcher.matches(siEntry.getKey(), graphKey)) {
+                    mergedInvariants.addAll(siEntry.getValue());
+                }
+            }
+            if (mergedRules.size() != descriptor.graphRules().size()
+                    || mergedInvariants.size() != descriptor.graphInvariants().size()) {
                 descriptor = new GraphDescriptor(descriptor.namespace(), descriptor.name(),
                         descriptor.interfaceName(), descriptor.implClassName(),
                         descriptor.nodes(), descriptor.dependencies(),
                         descriptor.faultPolicies(), descriptor.goalMethod(), mergedRules,
-                        descriptor.graphInvariants());
+                        mergedInvariants);
             }
 
             List<NodeDescriptor.ClassNode> classNodes = classNodesByGraph.getOrDefault(graphKey, List.of());
@@ -390,14 +401,18 @@ public class DesiredStateAnnotationsProcessor {
         }
 
         List<GraphRuleDescriptor> graphRules = new ArrayList<>();
+        List<GraphInvariantDescriptor> graphInvariants = new ArrayList<>();
         for (MethodInfo method : dsClass.methods()) {
             if (method.hasAnnotation(GRAPH_RULE)) {
                 graphRules.add(buildGraphRuleDescriptor(method, index, dsClass.name().toString()));
             }
+            if (method.hasAnnotation(GRAPH_INVARIANT)) {
+                graphInvariants.add(buildGraphInvariantDescriptor(method, index, dsClass.name().toString()));
+            }
         }
 
         return new GraphDescriptor(namespace, name, dsClass.name().toString(),
-                implClassName, nodes, deps, faultPolicies, goalMethod, graphRules, List.of());
+                implClassName, nodes, deps, faultPolicies, goalMethod, graphRules, graphInvariants);
     }
 
     private void collectMethodLevelFaultPolicies(
@@ -470,6 +485,23 @@ public class DesiredStateAnnotationsProcessor {
         return new GraphRuleDescriptor(method.name(), false, patterns, sourceClassName);
     }
 
+    private GraphInvariantDescriptor buildGraphInvariantDescriptor(MethodInfo method,
+                                                                    IndexView index, String sourceClassName) {
+        if (method.parametersCount() == 1
+                && method.parameterType(0).name().equals(DESIRED_STATE_GRAPH)) {
+            return new GraphInvariantDescriptor(method.name(), true, List.of(), sourceClassName);
+        }
+
+        List<PatternParameterDescriptor> patterns = new ArrayList<>();
+        for (int i = 0; i < method.parametersCount(); i++) {
+            PatternParameterDescriptor ppd = buildPatternForParameter(method, i, index);
+            if (ppd != null) {
+                patterns.add(ppd);
+            }
+        }
+        return new GraphInvariantDescriptor(method.name(), false, patterns, sourceClassName);
+    }
+
     private PatternParameterDescriptor buildPatternForParameter(MethodInfo method, int paramIndex,
                                                                 IndexView index) {
         for (AnnotationInstance ann : method.annotations()) {
@@ -528,6 +560,32 @@ public class DesiredStateAnnotationsProcessor {
             }
             if (!classRules.isEmpty()) {
                 result.add(Map.entry(graphPatterns, classRules));
+            }
+        }
+        return result;
+    }
+
+    private List<Map.Entry<String[], List<GraphInvariantDescriptor>>> scanStandaloneGraphInvariants(IndexView index) {
+        List<Map.Entry<String[], List<GraphInvariantDescriptor>>> result = new ArrayList<>();
+        for (AnnotationInstance giAnn : index.getAnnotations(GRAPH_INVARIANT)) {
+            if (giAnn.target().kind() != AnnotationTarget.Kind.CLASS) continue;
+            ClassInfo classInfo = giAnn.target().asClass();
+            AnnotationValue graphVal = giAnn.value("graph");
+            if (graphVal == null) continue;
+            String[] graphPatterns = graphVal.asStringArray();
+            if (graphPatterns.length == 0) continue;
+
+            List<GraphInvariantDescriptor> classInvariants = new ArrayList<>();
+            for (MethodInfo method : classInfo.methods()) {
+                if (method.hasAnnotation(GRAPH_INVARIANT)
+                        && !java.lang.reflect.Modifier.isStatic(method.flags())
+                        && java.lang.reflect.Modifier.isPublic(method.flags())) {
+                    classInvariants.add(buildGraphInvariantDescriptor(method, index,
+                            classInfo.name().toString()));
+                }
+            }
+            if (!classInvariants.isEmpty()) {
+                result.add(Map.entry(graphPatterns, classInvariants));
             }
         }
         return result;
