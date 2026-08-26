@@ -350,12 +350,12 @@ public class AnnotationValidationStep {
                 errors.add("@GraphRule '" + method.name() + "' in " + dsClass.name().local()
                            + " must return List<GraphMutation>");
             }
-            validatePatternParameters(method, dsClass.name().local(), index, errors);
+            validatePatternParameters(method, dsClass.name().local(), index, "GraphRule", errors);
         }
     }
 
     private void validatePatternParameters(MethodInfo method, String className,
-            IndexView index, List<String> errors) {
+            IndexView index, String annotationName, List<String> errors) {
         if (method.parametersCount() == 1
                 && method.parameterType(0).name().equals(DESIRED_STATE_GRAPH)) {
             return;
@@ -374,7 +374,7 @@ public class AnnotationValidationStep {
             }
         }
         if (!hasPatternAnnotations && method.parametersCount() == 1) {
-            errors.add("@GraphRule '" + method.name() + "' imperative method "
+            errors.add("@" + annotationName + " '" + method.name() + "' imperative method "
                     + "first parameter must be DesiredStateGraph");
             return;
         }
@@ -445,7 +445,7 @@ public class AnnotationValidationStep {
                         + "' parameterized method must return void");
             }
 
-            validatePatternParameters(method, dsClass.name().local(), index, errors);
+            validatePatternParameters(method, dsClass.name().local(), index, "GraphInvariant", errors);
         }
     }
 
