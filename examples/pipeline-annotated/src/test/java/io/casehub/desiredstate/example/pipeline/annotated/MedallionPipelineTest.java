@@ -221,6 +221,6 @@ class MedallionPipelineTest {
 
         return new GraphDescriptor(ds.namespace(), ds.name(),
                 iface.getName(), MedallionPipelineImpl.class.getName(),
-                nodes, deps, faultPolicies, null, graphRules);
+                nodes, deps, faultPolicies, null, graphRules, List.of());
     }
 }

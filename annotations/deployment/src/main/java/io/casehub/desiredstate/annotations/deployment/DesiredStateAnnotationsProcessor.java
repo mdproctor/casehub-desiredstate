@@ -110,7 +110,8 @@ public class DesiredStateAnnotationsProcessor {
                 descriptor = new GraphDescriptor(descriptor.namespace(), descriptor.name(),
                         descriptor.interfaceName(), descriptor.implClassName(),
                         descriptor.nodes(), descriptor.dependencies(),
-                        descriptor.faultPolicies(), descriptor.goalMethod(), mergedRules);
+                        descriptor.faultPolicies(), descriptor.goalMethod(), mergedRules,
+                        descriptor.graphInvariants());
             }
 
             List<NodeDescriptor.ClassNode> classNodes = classNodesByGraph.getOrDefault(graphKey, List.of());
@@ -127,7 +128,7 @@ public class DesiredStateAnnotationsProcessor {
                 descriptor = new GraphDescriptor(descriptor.namespace(), descriptor.name(),
                         descriptor.interfaceName(), descriptor.implClassName(),
                         mergedNodes, mergedDeps, mergedPolicies, descriptor.goalMethod(),
-                        descriptor.graphRules());
+                        descriptor.graphRules(), descriptor.graphInvariants());
             }
 
             @SuppressWarnings("rawtypes")
@@ -160,7 +161,7 @@ public class DesiredStateAnnotationsProcessor {
             List<FaultPolicyDescriptor> classFaultPolicies = collectClassFaultPolicies(entry.getValue(), index);
 
             GraphDescriptor descriptor = new GraphDescriptor(ns, nm, null, null,
-                                                             nodes, deps, classFaultPolicies, null, List.of());
+                                                             nodes, deps, classFaultPolicies, null, List.of(), List.of());
 
             @SuppressWarnings("rawtypes")
             RuntimeValue<GoalCompiler> runtimeValue = recorder.createGoalCompiler(descriptor);
@@ -396,7 +397,7 @@ public class DesiredStateAnnotationsProcessor {
         }
 
         return new GraphDescriptor(namespace, name, dsClass.name().toString(),
-                implClassName, nodes, deps, faultPolicies, goalMethod, graphRules);
+                implClassName, nodes, deps, faultPolicies, goalMethod, graphRules, List.of());
     }
 
     private void collectMethodLevelFaultPolicies(
