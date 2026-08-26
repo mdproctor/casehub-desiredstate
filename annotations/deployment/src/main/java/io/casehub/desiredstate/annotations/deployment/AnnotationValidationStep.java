@@ -58,6 +58,14 @@ public class AnnotationValidationStep {
             "io.casehub.desiredstate.annotations.Customize");
     private static final DotName GRAPH_RULE   = DotName.createSimple(
             "io.casehub.desiredstate.annotations.GraphRule");
+    private static final DotName MATCH        = DotName.createSimple(
+            "io.casehub.desiredstate.annotations.Match");
+    private static final DotName DIRECT_DEP   = DotName.createSimple(
+            "io.casehub.desiredstate.annotations.DirectDep");
+    private static final DotName REACHES      = DotName.createSimple(
+            "io.casehub.desiredstate.annotations.Reaches");
+    private static final DotName NOT_EXISTS   = DotName.createSimple(
+            "io.casehub.desiredstate.annotations.NotExists");
     private static final DotName JAVA_LIST    = DotName.createSimple("java.util.List");
 
 
@@ -132,7 +140,7 @@ public class AnnotationValidationStep {
             validateFaultPolicyFaultTypes(dsClass, index, errors);
             validateTierReviewMethods(dsClass, index, errors);
             validateGoalMethod(dsClass, index, errors);
-            validateGraphRules(dsClass, errors);
+            validateGraphRules(dsClass, index, errors);
 
             if (localNodeIds.isEmpty()) {
                 warnings.add("@DesiredState '" + dsClass.name().local()
@@ -327,7 +335,7 @@ public class AnnotationValidationStep {
         }
     }
 
-    private void validateGraphRules(ClassInfo dsClass, List<String> errors) {
+    private void validateGraphRules(ClassInfo dsClass, IndexView index, List<String> errors) {
         for (MethodInfo method : dsClass.methods()) {
             if (!method.hasAnnotation(GRAPH_RULE)) {continue;}
 
@@ -339,6 +347,81 @@ public class AnnotationValidationStep {
                 errors.add("@GraphRule '" + method.name() + "' in " + dsClass.name().local()
                            + " must return List<GraphMutation>");
             }
+            validatePatternParameters(method, dsClass.name().local(), index, errors);
+        }
+    }
+
+    private void validatePatternParameters(MethodInfo method, String className,
+            IndexView index, List<String> errors) {
+        if (method.parametersCount() == 1
+                && method.parameterType(0).name().equals(DESIRED_STATE_GRAPH)) {
+            return;
+        }
+        if (method.parametersCount() == 0) return;
+
+        boolean hasPatternAnnotations = false;
+        for (var ann : method.annotations()) {
+            if (ann.target().kind() == AnnotationTarget.Kind.METHOD_PARAMETER) {
+                DotName n = ann.name();
+                if (n.equals(MATCH) || n.equals(DIRECT_DEP) || n.equals(REACHES)
+                        || n.equals(NOT_EXISTS)) {
+                    hasPatternAnnotations = true;
+                    break;
+                }
+            }
+        }
+        if (!hasPatternAnnotations && method.parametersCount() == 1) {
+            errors.add("@GraphRule '" + method.name() + "' imperative method "
+                    + "first parameter must be DesiredStateGraph");
+            return;
+        }
+
+        java.util.LinkedHashSet<String> paramNames = new java.util.LinkedHashSet<>();
+        String previousParamName = null;
+        for (int i = 0; i < method.parametersCount(); i++) {
+            String paramName = method.parameterName(i);
+            paramNames.add(paramName);
+
+            for (var ann : method.annotations()) {
+                if (ann.target().kind() != AnnotationTarget.Kind.METHOD_PARAMETER) continue;
+                if (ann.target().asMethodParameter().position() != i) continue;
+
+                DotName annName = ann.name();
+
+                if (annName.equals(DIRECT_DEP) || annName.equals(REACHES)) {
+                    String of = stringValueOrDefault(ann, index, "of", "");
+                    if (of.isEmpty() && previousParamName == null) {
+                        errors.add("@" + annName.local() + " on parameter '"
+                                + paramName + "' uses sequential chaining but has no "
+                                + "preceding parameter — use @Match as the first "
+                                + "parameter or specify 'of' explicitly");
+                    }
+                    if (!of.isEmpty() && !paramNames.contains(of)) {
+                        errors.add("@" + annName.local() + " 'of' references '"
+                                + of + "' — no parameter named '" + of + "' in "
+                                + method.name());
+                    }
+                }
+
+                if (annName.equals(NOT_EXISTS)) {
+                    String of = stringValueOrDefault(ann, index, "of", "");
+                    if (!of.isEmpty()) {
+                        AnnotationValue dirVal = ann.value("direction");
+                        if (dirVal == null) {
+                            errors.add("@NotExists on parameter '" + paramName
+                                    + "' specifies 'of' without explicit direction "
+                                    + "— DEPENDENCIES and DEPENDENTS have opposite "
+                                    + "semantics; specify direction");
+                        }
+                        if (!paramNames.contains(of)) {
+                            errors.add("@NotExists 'of' references '" + of
+                                    + "' — no parameter named '" + of + "' in "
+                                    + method.name());
+                        }
+                    }
+                }
+            }
+            previousParamName = paramName;
         }
     }
 
