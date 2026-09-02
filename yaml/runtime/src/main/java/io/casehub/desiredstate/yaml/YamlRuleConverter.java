@@ -17,7 +17,7 @@ import io.casehub.desiredstate.api.NodeSpec;
 import io.casehub.desiredstate.yaml.model.YamlPattern;
 import io.casehub.desiredstate.yaml.model.YamlRule;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
-import io.casehub.desiredstate.yaml.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableResolver;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -177,7 +177,7 @@ public final class YamlRuleConverter {
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             Object val = entry.getValue();
             if (val instanceof String s && s.contains("${var.")) {
-                result.put(entry.getKey(), resolver.resolveTemplateString(s, context));
+                result.put(entry.getKey(), resolver.resolveString(s, context));
             } else if (val instanceof Map<?, ?> nested) {
                 result.put(entry.getKey(),
                         resolveVarInActionParams((Map<String, Object>) nested, resolver, context));

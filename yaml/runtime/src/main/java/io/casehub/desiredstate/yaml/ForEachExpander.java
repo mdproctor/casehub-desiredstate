@@ -10,7 +10,8 @@ import io.casehub.desiredstate.api.NodeSpec;
 import io.casehub.desiredstate.yaml.model.YamlIterationGroup;
 import io.casehub.desiredstate.yaml.model.YamlNode;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
-import io.casehub.desiredstate.yaml.resolver.VariableResolver;
+import io.casehub.yaml.core.condition.Truthiness;
+import io.casehub.yaml.core.resolver.VariableResolver;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -216,7 +217,7 @@ public final class ForEachExpander {
         if (dot < 0) {return base;}
         String prefix = nodeId.substring(0, dot);
         Map<String, String> scope = moduleScopes.get(prefix);
-        return scope != null ? base.withModuleScope(scope) : base;
+        return scope != null ? base.withChainedScope("var", scope::get) : base;
     }
 
     @SuppressWarnings("unchecked")
@@ -241,7 +242,7 @@ public final class ForEachExpander {
     }
 
     private static boolean isTruthy(String value) {
-        return YamlGraphRecorder.isTruthy(value);
+        return Truthiness.isTruthy(value);
     }
 
     private static List<String> parseJsonArray(String json, String groupRef, ObjectMapper mapper) {

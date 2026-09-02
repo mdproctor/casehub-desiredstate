@@ -3,7 +3,7 @@ package io.casehub.desiredstate.yaml;
 import io.casehub.desiredstate.api.HookDescriptor;
 import io.casehub.desiredstate.api.LifecycleStep;
 import io.casehub.desiredstate.yaml.model.YamlNode;
-import io.casehub.desiredstate.yaml.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableResolver;
 
 import java.util.List;
 import java.util.Map;
