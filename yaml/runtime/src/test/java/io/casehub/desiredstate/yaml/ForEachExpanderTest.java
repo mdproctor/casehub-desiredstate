@@ -9,12 +9,14 @@ import io.casehub.desiredstate.api.NodeType;
 import io.casehub.desiredstate.yaml.model.YamlIterationGroup;
 import io.casehub.desiredstate.yaml.model.YamlNode;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
-import io.casehub.desiredstate.yaml.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -32,7 +34,9 @@ class ForEachExpanderTest {
 
     private final NodeSpecRegistry registry = NodeSpecRegistry.of(TYPE_MAP);
     private final ObjectMapper mapper = new ObjectMapper();
-    private final VariableResolver resolver = new VariableResolver(Map.of(), null, null);
+    private final VariableResolver resolver = new VariableResolver(
+            Map.of("var", (VariableSource) Map.<String, String>of()::get),
+            Set.of("match", "fault"));
 
     @Test
     void inlineForEach_stampsThreeCopies() {
@@ -129,7 +133,8 @@ class ForEachExpanderTest {
     @Test
     void variableSourcedValues_jsonArray() {
         var resolver = new VariableResolver(
-                Map.of("regions", "[\"us-east\", \"eu-west\"]"), null, null);
+                Map.of("var", (VariableSource) Map.of("regions", "[\"us-east\", \"eu-west\"]")::get),
+                Set.of("match", "fault"));
         var iterations = Map.of("regional",
                 new YamlIterationGroup("region", "${var.regions}"));
         var nodes = new LinkedHashMap<String, YamlNode>();
@@ -148,7 +153,8 @@ class ForEachExpanderTest {
     @Test
     void forEachPlusWhen_allCopiesExcluded() {
         var resolver = new VariableResolver(
-                Map.of("enable_sources", "false"), null, null);
+                Map.of("var", (VariableSource) Map.of("enable_sources", "false")::get),
+                Set.of("match", "fault"));
         Map<String, Object> inlineForEach = Map.of("as", "region",
                 "in", List.of("us-east", "eu-west"));
         var nodes = new LinkedHashMap<String, YamlNode>();

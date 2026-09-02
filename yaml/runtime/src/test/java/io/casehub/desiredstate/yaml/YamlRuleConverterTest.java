@@ -16,11 +16,13 @@ import io.casehub.desiredstate.runtime.DefaultDesiredStateGraphFactory;
 import io.casehub.desiredstate.yaml.model.YamlPattern;
 import io.casehub.desiredstate.yaml.model.YamlRule;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
-import io.casehub.desiredstate.yaml.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableSource;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -59,7 +61,7 @@ class YamlRuleConverterTest {
                                 "to", "${match.sink.id}"))));
 
         NodeSpecRegistry registry = NodeSpecRegistry.of(TYPE_REGISTRY);
-        VariableResolver resolver = new VariableResolver(Map.of(), null, null);
+        VariableResolver resolver = new VariableResolver(Map.of("var", (VariableSource) Map.<String, String>of()::get), Set.of("match", "fault"));
 
         ResolvedRule.DeclarativeRule rule = YamlRuleConverter.toDeclarativeRule(
                 "ensure-monitoring", yamlRule, resolver, registry);
@@ -98,7 +100,7 @@ class YamlRuleConverterTest {
                         "spec", Map.of("target", "${var.alert_prefix}-${match.sink.id}")))));
 
         NodeSpecRegistry registry = NodeSpecRegistry.of(TYPE_REGISTRY);
-        VariableResolver resolver = new VariableResolver(Map.of("alert_prefix", "PROD"), null, null);
+        VariableResolver resolver = new VariableResolver(Map.of("var", (VariableSource) Map.of("alert_prefix", "PROD")::get), Set.of("match", "fault"));
 
         ResolvedRule.DeclarativeRule rule = YamlRuleConverter.toDeclarativeRule(
                 "alert-rule", yamlRule, resolver, registry);
@@ -122,7 +124,7 @@ class YamlRuleConverterTest {
                 List.of(Map.of("removeNode", Map.of("id", "${match.sink.id}"))));
 
         NodeSpecRegistry registry = NodeSpecRegistry.of(TYPE_REGISTRY);
-        VariableResolver resolver = new VariableResolver(Map.of(), null, null);
+        VariableResolver resolver = new VariableResolver(Map.of("var", (VariableSource) Map.<String, String>of()::get), Set.of("match", "fault"));
 
         ResolvedRule.DeclarativeRule rule = YamlRuleConverter.toDeclarativeRule(
                 "remove-sinks", yamlRule, resolver, registry);

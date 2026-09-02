@@ -14,7 +14,9 @@ import io.casehub.desiredstate.api.GoalCompiler;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.NodeSpec;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
-import io.casehub.desiredstate.yaml.resolver.VariableResolver;
+import io.casehub.yaml.core.condition.Truthiness;
+import io.casehub.yaml.core.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableSource;
 import io.quarkus.runtime.RuntimeValue;
 import io.quarkus.runtime.annotations.Recorder;
 import org.jboss.logging.Logger;
@@ -90,7 +92,9 @@ public class YamlGraphRecorder {
         NodeSpecRegistry registry = NodeSpecRegistry.of(typeRegistryMap, instantiateProviders(factoryProviderClassNames));
 
         return new RuntimeValue<>((GoalCompiler) (goals, factory) -> {
-            VariableResolver resolver = new VariableResolver(inlineVariables, null, null);
+            VariableResolver resolver = new VariableResolver(
+                    Map.of("var", (VariableSource) inlineVariables::get),
+                    Set.of("match", "fault"));
 
             Map<String, io.casehub.desiredstate.yaml.model.YamlNode> effectiveNodes =
                     yamlGraph != null ? new java.util.LinkedHashMap<>(yamlGraph.nodes()) : Map.of();
@@ -127,7 +131,7 @@ public class YamlGraphRecorder {
                         io.casehub.desiredstate.yaml.model.YamlNode yamlNode = entry.getValue();
                         if (yamlNode.when() != null) {
                             String resolved = resolver.resolveString(yamlNode.when(), nodeId);
-                            if (!isTruthy(resolved)) {
+                            if (!Truthiness.isTruthy(resolved)) {
                                 excludedNodeIds.add(nodeId);
                             }
                         }
@@ -226,16 +230,7 @@ public class YamlGraphRecorder {
         return false;
     }
 
-    static boolean isTruthy(String value) {
-        return switch (value.toLowerCase()) {
-            case "true", "yes", "on", "y", "1" -> true;
-            case "false", "no", "off", "n", "0" -> false;
-            default -> throw new IllegalArgumentException(
-                    "when: condition resolved to '" + value
-                    + "' which is not a boolean value. "
-                    + "Expected: true/false/yes/no/on/off/y/n/1/0");
-        };
-    }
+
 
     @SuppressWarnings("unchecked")
     private static List<io.casehub.desiredstate.api.NodeSpecFactoryProvider> instantiateProviders(
@@ -284,7 +279,9 @@ public class YamlGraphRecorder {
         NodeSpecRegistry registry = NodeSpecRegistry.of(typeRegistryMap, instantiateProviders(factoryProviderClassNames));
 
         return new RuntimeValue<>((GoalCompiler) (goals, factory) -> {
-            VariableResolver                             resolver          = new VariableResolver(inlineVariables, null, null);
+            VariableResolver resolver = new VariableResolver(
+                    Map.of("var", (VariableSource) inlineVariables::get),
+                    Set.of("match", "fault"));
             List<io.casehub.desiredstate.api.Phase>      phases            = new ArrayList<>();
             List<DesiredNode>                            carryForwardNodes = new ArrayList<>();
             List<io.casehub.desiredstate.api.Dependency> carryForwardDeps  = new ArrayList<>();
@@ -333,7 +330,7 @@ public class YamlGraphRecorder {
                         io.casehub.desiredstate.yaml.model.YamlNode yamlNode = entry.getValue();
                         if (yamlNode.when() != null) {
                             String resolved = resolver.resolveString(yamlNode.when(), nodeId);
-                            if (!isTruthy(resolved)) {
+                            if (!Truthiness.isTruthy(resolved)) {
                                 excludedNodeIds.add(nodeId);
                                 continue;
                             }
