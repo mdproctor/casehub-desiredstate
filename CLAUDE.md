@@ -89,6 +89,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `NodeProvisionerRouter` | `resyncIntervalFor(NodeType) → Duration` | Get effective resync interval for a type (provisioner default or Preferences override) |
 | `FaultPolicy` | `onFault(String tenancyId, FaultEvent, DesiredStateGraph, ActualState) → List<GraphMutation>` | Mutate graph in response to fault (with actual state visibility). `addReviewNode(ReviewSpecFactory) → TypedFaultPolicy` static factory — creates review node with dependency edge to faulted node, ID derived from `NodeType.value()`. Runtime consistency assertion guards probe-vs-actual NodeType mismatch |
 | `FaultCountStore` | `incrementAndGet(namespace, tenancyId, nodeId) → int`, `getCount(...)`, `reset(...)`, `remove(...)`, `evict(namespace, tenancyId, retainedNodes)`, `evictAcrossNamespaces(tenancyId, retainedNodes)` | Pluggable fault count storage — namespace-scoped, tenant-isolated. `evictAcrossNamespaces` for cross-namespace bulk eviction of removed nodes |
+| `ReconciliationStateStore` | `store(tenancyId, DesiredStateGraph)`, `load(tenancyId) → Optional<DesiredStateGraph>`, `remove(tenancyId)` | Pluggable storage for last-reconciled desired graph per tenant. Used by TransitionPlanner to resolve orphan node specs during deprovision. Default: `InMemoryReconciliationStateStore` |
 | `EventSource` | `stream() → Multi<StateEvent>` | Stream actual-state events into reconciliation loop |
 | `TransitionExecutor` | `execute(TransitionPlan, String tenancyId) → TransitionResult` | Execute a transition plan (SPI'd — simple or case-backed) |
 | `HumanNodeHandler` | `onProvision(DesiredNode, ProvisionContext) → StepOutcome` | Handle human-gated nodes during provision (called when `requiresHuman(PROVISION)`) |
@@ -138,6 +139,8 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `DefaultActualStateAdapterRouter` | Runtime implementation of ActualStateAdapterRouter — builds routing table from all adapters, dispatches readActual by NodeType, merges results |
 | `CdiActualStateAdapterRouter` | CDI-wired subclass injecting `Instance<ActualStateAdapter>` |
 | `DefaultFaultCountStore` | `@DefaultBean @ApplicationScoped` — CDI fallback wrapping `InMemoryFaultCountStore`. Yields to `JpaFaultCountStore` when `persistence-jpa` is on classpath. Tier 1a functional fallback |
+| `DefaultReconciliationStateStore` | `@DefaultBean @ApplicationScoped` — CDI fallback wrapping `InMemoryReconciliationStateStore`. Durable implementations override via classpath activation |
+| `InMemoryReconciliationStateStore` | Default `ReconciliationStateStore` — `ConcurrentHashMap` with `tenancyId` key. Thread-safe. In `api/` (builder default, not CDI-managed) |
 | `FaultCountEvictionListener` | `@ApplicationScoped` GlobalReconciliationListener — calls `evictAcrossNamespaces` after each cycle and on tenant stop. CDI-discovered. No namespace registry needed |
 | `JpaFaultCountStore` | `@ApplicationScoped` (persistence-jpa/) — JPA-backed FaultCountStore. Portable SQL (H2 MODE=PostgreSQL + PostgreSQL). Flyway migration V1 at `db/desiredstate/migration/` |
 | `FaultCountEntity` | JPA entity for `ds_fault_count` table — composite key `(namespace, tenancy_id, node_id)`, count field. `@IdClass(Key.class)` |

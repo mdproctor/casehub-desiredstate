@@ -71,6 +71,65 @@ class ReconciliationLoopTest {
     }
 
     @Test
+    void orphanDeprovision_usesRealSpecFromPreviousDesired() {
+        DesiredNode       nodeA        = node("a");
+        DesiredStateGraph initialGraph = factory.of(List.of(nodeA), List.of());
+
+        // Initial: node is absent → will be provisioned
+        actualAdapter.setStatuses(Map.of(NodeId.of("a"), NodeStatus.ABSENT));
+        loop.start("test-tenant", initialGraph);
+
+        await().atMost(AWAIT).until(() -> !testExecutor.executedPlans.isEmpty());
+        testExecutor.executedPlans.clear();
+
+        // Node now present; update desired to empty graph → orphan deprovision
+        actualAdapter.setStatuses(Map.of(NodeId.of("a"), NodeStatus.PRESENT));
+        loop.updateDesired("test-tenant", factory.empty());
+        loop.requestReconciliation("test-tenant");
+
+        await().atMost(AWAIT).until(() -> testExecutor.executedPlans.stream()
+                                                                    .anyMatch(p -> !p.removals().isEmpty()));
+
+        TransitionPlan deprovisionPlan = testExecutor.executedPlans.stream()
+                                                                   .filter(p -> !p.removals().isEmpty())
+                                                                   .findFirst().orElseThrow();
+
+        OrderedStep removal = deprovisionPlan.removals().get(0);
+        assertEquals(NodeId.of("a"), removal.node().id());
+        // Key assertion: spec should be the REAL TestSpec, not UnknownSpec
+        assertThat(removal.node().spec()).isInstanceOf(TestSpec.class);
+        assertEquals("test", removal.node().type().value());
+    }
+
+    @Test
+    void orphanDeprovision_preservesHumanGatingFromPreviousDesired() {
+        DesiredNode gatedNode = new DesiredNode(NodeId.of("a"),
+                                                new TestSpec("v1"), HumanGating.DEPROVISION_ONLY);
+        DesiredStateGraph initialGraph = factory.of(List.of(gatedNode), List.of());
+
+        actualAdapter.setStatuses(Map.of(NodeId.of("a"), NodeStatus.ABSENT));
+        loop.start("test-tenant", initialGraph);
+
+        await().atMost(AWAIT).until(() -> !testExecutor.executedPlans.isEmpty());
+        testExecutor.executedPlans.clear();
+
+        actualAdapter.setStatuses(Map.of(NodeId.of("a"), NodeStatus.PRESENT));
+        loop.updateDesired("test-tenant", factory.empty());
+        loop.requestReconciliation("test-tenant");
+
+        await().atMost(AWAIT).until(() -> testExecutor.executedPlans.stream()
+                                                                    .anyMatch(p -> !p.removals().isEmpty()));
+
+        TransitionPlan deprovisionPlan = testExecutor.executedPlans.stream()
+                                                                   .filter(p -> !p.removals().isEmpty())
+                                                                   .findFirst().orElseThrow();
+
+        OrderedStep removal = deprovisionPlan.removals().get(0);
+        assertEquals(HumanGating.DEPROVISION_ONLY, removal.node().humanGating());
+    }
+
+
+    @Test
     void start_triggersInitialReconciliation() {
         // Desired: two nodes. Actual: empty (all UNKNOWN).
         DesiredNode nodeA = node("a");
