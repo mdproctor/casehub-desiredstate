@@ -29,57 +29,54 @@ import java.util.Set;
 @ApplicationScoped
 public class TransitionPlanner {
 
-    /**
-     * Compares desired graph to actual state and produces a transition plan.
-     * <p>
-     * Additions are sorted roots-first (dependencies before dependents) using Kahn's algorithm.
-     * Removals are orphaned nodes not in the desired graph — no dependency ordering (they have no known mutual dependencies).
-     *
-     * @param desired the desired state graph
-     * @param actual  the observed actual state
-     * @return a transition plan with ordered removals and additions
-     */
     public TransitionPlan plan(DesiredStateGraph desired, ActualState actual) {
+        return plan(desired, actual, null);
+    }
+
+    public TransitionPlan plan(DesiredStateGraph desired, ActualState actual, DesiredStateGraph previousDesired) {
         List<OrderedStep> removals = new ArrayList<>();
 
-        // Orphan detection: nodes in actual but not in desired
         for (Map.Entry<NodeId, NodeStatus> entry : actual.statuses().entrySet()) {
             NodeId nodeId = entry.getKey();
             if (!desired.nodes().containsKey(nodeId)) {
                 boolean remove = switch (entry.getValue()) {
                     case PRESENT, DRIFTED -> true;
-                    case ABSENT, UNKNOWN  -> false;
+                    case ABSENT, UNKNOWN -> false;
                 };
                 if (remove) {
-                    removals.add(new OrderedStep(
-                        new DesiredNode(nodeId, new UnknownSpec(), HumanGating.NONE),
-                        StepAction.DEPROVISION));
+                    DesiredNode removalNode;
+                    if (previousDesired != null && previousDesired.nodes().containsKey(nodeId)) {
+                        removalNode = previousDesired.nodes().get(nodeId);
+                    } else {
+                        removalNode = new DesiredNode(nodeId, new UnknownSpec(), HumanGating.NONE);
+                    }
+                    removals.add(new OrderedStep(removalNode, StepAction.DEPROVISION));
                 }
             }
         }
 
-        // Desired node classification: what needs provisioning
         Set<NodeId> toAdd = new HashSet<>();
         for (Map.Entry<NodeId, DesiredNode> entry : desired.nodes().entrySet()) {
             NodeStatus status = actual.statuses().getOrDefault(entry.getKey(), NodeStatus.UNKNOWN);
             boolean provision = switch (status) {
                 case ABSENT, UNKNOWN, DRIFTED -> true;
-                case PRESENT                  -> false;
+                case PRESENT -> false;
             };
             if (provision) {
                 toAdd.add(entry.getKey());
             }
         }
 
-        // Topologically sort additions: roots-first (Kahn's algorithm)
-        List<NodeId> sorted = topologicalSort(desired, toAdd);
+        List<NodeId>      sorted    = topologicalSort(desired, toAdd);
         List<OrderedStep> additions = new ArrayList<>();
         for (NodeId nodeId : sorted) {
             additions.add(new OrderedStep(desired.nodes().get(nodeId), StepAction.PROVISION));
         }
 
-        return new TransitionPlan(removals, additions, desired, desired);
+        DesiredStateGraph before = previousDesired != null ? previousDesired : desired;
+        return new TransitionPlan(removals, additions, before, desired);
     }
+
 
     /**
      * Topologically sorts nodes using Kahn's algorithm.

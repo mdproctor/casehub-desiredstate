@@ -14,6 +14,8 @@ import io.casehub.desiredstate.api.NodeDriftedData;
 import io.casehub.desiredstate.api.NodeFaultedData;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.NodeProvisionerRouter;
+import io.casehub.desiredstate.api.ReconciliationStateStore;
+import io.casehub.desiredstate.api.InMemoryReconciliationStateStore;
 import io.casehub.desiredstate.api.NodeRecoveredData;
 import io.casehub.desiredstate.api.NodeStatus;
 import io.casehub.desiredstate.api.NodeType;
@@ -106,6 +108,7 @@ public class ReconciliationLoop {
     private final ReconciliationEventEmitter eventEmitter;
     private final CbrProposalTracker cbrTracker;
     private final List<GlobalReconciliationListener> globalListeners;
+    private final ReconciliationStateStore reconciliationStateStore;
 
 
     private final ConcurrentHashMap<String, TenantLoop> loops = new ConcurrentHashMap<>();
@@ -121,10 +124,11 @@ public class ReconciliationLoop {
             NodeProvisionerRouter router,
             Event<CloudEvent> cloudEventSink,
             Instance<GlobalReconciliationListener> globalListeners,
-            CbrProposalTracker cbrTracker) {
+            CbrProposalTracker cbrTracker,
+            ReconciliationStateStore reconciliationStateStore) {
         this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
              router, DEFAULT_DEBOUNCE, null, cloudEventSink::fire, cbrTracker,
-             globalListeners.stream().toList());
+             globalListeners.stream().toList(), reconciliationStateStore);
     }
 
     protected ReconciliationLoop(
@@ -134,7 +138,7 @@ public class ReconciliationLoop {
             FaultPolicyEngine faultPolicyEngine,
             MergedEventSource mergedEventSource) {
         this(planner, executor, actualStateAdapterRouter, faultPolicyEngine, mergedEventSource,
-             null, DEFAULT_DEBOUNCE, DEFAULT_RESYNC, null, null, List.of());
+             null, DEFAULT_DEBOUNCE, DEFAULT_RESYNC, null, null, List.of(), null);
     }
 
     private ReconciliationLoop(
@@ -148,7 +152,8 @@ public class ReconciliationLoop {
             Duration resyncOverride,
             Consumer<CloudEvent> cloudEventSink,
             CbrProposalTracker cbrTracker,
-            List<GlobalReconciliationListener> globalListeners) {
+            List<GlobalReconciliationListener> globalListeners,
+            ReconciliationStateStore reconciliationStateStore) {
         this.planner                  = planner;
         this.executor                 = executor;
         this.actualStateAdapterRouter = actualStateAdapterRouter;
@@ -161,6 +166,7 @@ public class ReconciliationLoop {
         this.eventEmitter             = new ReconciliationEventEmitter();
         this.cbrTracker               = cbrTracker != null ? cbrTracker : new CbrProposalTracker();
         this.globalListeners          = globalListeners != null ? List.copyOf(globalListeners) : List.of();
+        this.reconciliationStateStore = reconciliationStateStore != null ? reconciliationStateStore : new InMemoryReconciliationStateStore();
 
         int poolSize = computeSchedulerPoolSize();
         this.scheduler = Executors.newScheduledThreadPool(poolSize, r -> {
@@ -370,6 +376,7 @@ public class ReconciliationLoop {
         private       Consumer<CloudEvent>               cloudEventSink;
         private       CbrProposalTracker                 cbrTracker;
         private       List<GlobalReconciliationListener> globalListeners = List.of();
+        private       ReconciliationStateStore           reconciliationStateStore;
 
         private Builder(TransitionPlanner planner, TransitionExecutor executor,
                         ActualStateAdapterRouter actualStateAdapterRouter,
@@ -412,10 +419,16 @@ public class ReconciliationLoop {
             return this;
         }
 
+        public Builder reconciliationStateStore(ReconciliationStateStore reconciliationStateStore) {
+            this.reconciliationStateStore = reconciliationStateStore;
+            return this;
+        }
+
         public ReconciliationLoop build() {
             return new ReconciliationLoop(planner, executor, actualStateAdapterRouter,
                                           faultPolicyEngine, mergedEventSource, router, debounceWindow,
-                                          resyncInterval, cloudEventSink, cbrTracker, globalListeners);
+                                          resyncInterval, cloudEventSink, cbrTracker, globalListeners,
+                                          reconciliationStateStore);
         }
     }
 
@@ -516,6 +529,7 @@ public class ReconciliationLoop {
                 requestedReconciliation.cancel(false);
             }
             cbrTracker.clearTenant(tenancyId);
+            reconciliationStateStore.remove(tenancyId);
         }
 
         void updateDesired(DesiredStateGraph newDesired) {
@@ -733,7 +747,9 @@ public class ReconciliationLoop {
         private TransitionPlan plan(DesiredStateGraph desired, ActualState actual) {
             Span span = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME).spanBuilder("plan").startSpan();
             try (Scope ignored = span.makeCurrent()) {
-                TransitionPlan plan = planner.plan(desired, actual);
+                DesiredStateGraph previousDesired = reconciliationStateStore.load(tenancyId).orElse(null);
+                TransitionPlan plan = planner.plan(desired, actual, previousDesired);
+                reconciliationStateStore.store(tenancyId, desired);
                 span.setAttribute(AttributeKey.longKey("desiredstate.additions"),
                         plan.additions().size());
                 span.setAttribute(AttributeKey.longKey("desiredstate.removals"),

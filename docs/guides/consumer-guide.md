@@ -206,6 +206,22 @@ Three tiers (CDI priority ladder: custom app store > JPA store > in-memory defau
 
 `FaultCountEvictionListener` (runtime module) -- `@ApplicationScoped` `GlobalReconciliationListener` that calls `evictAcrossNamespaces` after each cycle and on tenant stop, removing stale counts for nodes no longer in the graph.
 
+### ReconciliationStateStore
+
+SPI: persistence abstraction for the last-reconciled desired graph per tenant. Used by `TransitionPlanner` to resolve orphan node specs during deprovisioning -- when a node is removed from the desired graph, the planner retrieves the original `DesiredNode` (with real spec, type, humanGating) from the stored previous graph.
+
+```java
+void store(String tenancyId, DesiredStateGraph lastReconciledDesired);
+Optional<DesiredStateGraph> load(String tenancyId);
+void remove(String tenancyId);
+```
+
+Two tiers (CDI priority ladder: durable store > in-memory default):
+- `InMemoryReconciliationStateStore` (API module) -- `ConcurrentHashMap` with `tenancyId` key. Thread-safe. Lost on restart.
+- `DefaultReconciliationStateStore` (runtime module) -- `@DefaultBean @ApplicationScoped` CDI fallback wrapping `InMemoryReconciliationStateStore`.
+
+For durable orphan resolution across restarts, provide a custom `ReconciliationStateStore` implementation (e.g. JPA-backed) that serializes and restores the `DesiredStateGraph`.
+
 ### SituationRecompiler
 
 SPI: `recompile(String tenancyId, DesiredStateGraph current, ActualState actual, ActiveSituation situation, DesiredStateGraphFactory factory) -> Optional<CompilationResult>`. Situation-driven graph recompilation independent of GoalCompiler. Supports priority ordering for chain-of-responsibility via `priority()` (ascending; default 0).

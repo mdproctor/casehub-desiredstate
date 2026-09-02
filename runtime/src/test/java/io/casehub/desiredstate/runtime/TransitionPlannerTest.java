@@ -20,6 +20,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TransitionPlannerTest {
@@ -355,6 +356,91 @@ class TransitionPlannerTest {
         assertEquals(1, plan.additions().size());
         assertEquals(NodeId.of("b"), plan.additions().get(0).node().id());
     }
+
+
+    @Test
+    void orphanRemoval_usesPreviousDesiredSpec() {
+        NodeSpec    orphanSpec = new TestSpec("orphan-data");
+        DesiredNode orphanNode = new DesiredNode(NodeId.of("orphan"), orphanSpec, HumanGating.NONE);
+        DesiredNode nodeA      = new DesiredNode(NodeId.of("a"), new TestSpec("A"), HumanGating.NONE);
+
+        DesiredStateGraph previousDesired = factory.of(List.of(nodeA, orphanNode), List.of());
+        DesiredStateGraph desired         = factory.of(List.of(nodeA), List.of());
+        ActualState actual = new ActualState(Map.of(
+                NodeId.of("a"), NodeStatus.PRESENT,
+                NodeId.of("orphan"), NodeStatus.PRESENT
+                                                   ));
+
+        TransitionPlan plan = planner.plan(desired, actual, previousDesired);
+
+        assertEquals(1, plan.removals().size());
+        assertEquals(NodeId.of("orphan"), plan.removals().get(0).node().id());
+        assertSame(orphanSpec, plan.removals().get(0).node().spec());
+    }
+
+    @Test
+    void orphanRemoval_fallsBackToUnknownSpec_whenNoPreviousDesired() {
+        DesiredStateGraph desired = factory.empty();
+        ActualState actual = new ActualState(Map.of(
+                NodeId.of("orphan"), NodeStatus.PRESENT
+                                                   ));
+
+        TransitionPlan plan = planner.plan(desired, actual, null);
+
+        assertEquals(1, plan.removals().size());
+        assertEquals(NodeType.of("unknown"), plan.removals().get(0).node().type());
+    }
+
+    @Test
+    void orphanRemoval_fallsBackToUnknownSpec_whenOrphanNotInPreviousDesired() {
+        DesiredNode       nodeA           = new DesiredNode(NodeId.of("a"), new TestSpec("A"), HumanGating.NONE);
+        DesiredStateGraph previousDesired = factory.of(List.of(nodeA), List.of());
+        DesiredStateGraph desired         = factory.of(List.of(nodeA), List.of());
+        ActualState actual = new ActualState(Map.of(
+                NodeId.of("a"), NodeStatus.PRESENT,
+                NodeId.of("never-desired"), NodeStatus.PRESENT
+                                                   ));
+
+        TransitionPlan plan = planner.plan(desired, actual, previousDesired);
+
+        assertEquals(1, plan.removals().size());
+        assertEquals(NodeId.of("never-desired"), plan.removals().get(0).node().id());
+        assertEquals(NodeType.of("unknown"), plan.removals().get(0).node().type());
+    }
+
+    @Test
+    void orphanRemoval_preservesHumanGatingFromPreviousDesired() {
+        DesiredNode       gatedNode       = new DesiredNode(NodeId.of("gated"), new TestSpec("G"), HumanGating.DEPROVISION_ONLY);
+        DesiredStateGraph previousDesired = factory.of(List.of(gatedNode), List.of());
+        DesiredStateGraph desired         = factory.empty();
+        ActualState actual = new ActualState(Map.of(
+                NodeId.of("gated"), NodeStatus.PRESENT
+                                                   ));
+
+        TransitionPlan plan = planner.plan(desired, actual, previousDesired);
+
+        assertEquals(1, plan.removals().size());
+        assertEquals(HumanGating.DEPROVISION_ONLY, plan.removals().get(0).node().humanGating());
+    }
+
+    @Test
+    void plan_beforeGraphIsPreviousDesired_afterGraphIsDesired() {
+        DesiredNode orphanNode = new DesiredNode(NodeId.of("orphan"), new TestSpec("O"), HumanGating.NONE);
+        DesiredNode nodeA      = new DesiredNode(NodeId.of("a"), new TestSpec("A"), HumanGating.NONE);
+
+        DesiredStateGraph previousDesired = factory.of(List.of(nodeA, orphanNode), List.of());
+        DesiredStateGraph desired         = factory.of(List.of(nodeA), List.of());
+        ActualState actual = new ActualState(Map.of(
+                NodeId.of("a"), NodeStatus.PRESENT,
+                NodeId.of("orphan"), NodeStatus.PRESENT
+                                                   ));
+
+        TransitionPlan plan = planner.plan(desired, actual, previousDesired);
+
+        assertSame(previousDesired, plan.before());
+        assertSame(desired, plan.after());
+    }
+
 
     // Helper test spec
     record TestSpec(String value) implements NodeSpec { @Override public NodeType nodeType() { return NodeType.of("test"); } }
