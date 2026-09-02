@@ -103,11 +103,30 @@ public class YamlGraphRecorder {
 
             DesiredStateGraph graph;
             if (hasForEach || hasModules) {
-                ForEachExpander.ExpandedNodes expanded = ForEachExpander.expand(
-                        effectiveNodes,
-                        yamlGraph != null && yamlGraph.iterations() != null ? yamlGraph.iterations() : Map.of(),
-                        resolver, registry, mapper, 1000, moduleScopes);
-                graph = factory.of(expanded.nodes(), expanded.dependencies());
+                var adapter = new YamlNodeForEachAdapter(moduleScopes);
+                io.casehub.yaml.core.foreach.ExpansionResult<io.casehub.desiredstate.yaml.model.YamlNode> expanded =
+                        io.casehub.yaml.core.foreach.ForEachExpander.expand(
+                                effectiveNodes,
+                                yamlGraph != null && yamlGraph.iterations() != null ? yamlGraph.iterations() : Map.of(),
+                                resolver, adapter, 1000, jsonArrayExpander(mapper));
+                List<DesiredNode> expNodes = new ArrayList<>();
+                List<Dependency> expDeps = new ArrayList<>();
+                for (Map.Entry<String, io.casehub.desiredstate.yaml.model.YamlNode> expEntry : expanded.elements().entrySet()) {
+                    String expNodeId = expEntry.getKey();
+                    io.casehub.desiredstate.yaml.model.YamlNode expYamlNode = expEntry.getValue();
+                    Class<? extends NodeSpec> specClass = registry.resolve(expYamlNode.type());
+                    NodeSpec spec = mapper.convertValue(expYamlNode.spec(), specClass);
+                    VariableResolver nodeResolver = adapter.resolverFor(expNodeId);
+                    expNodes.add(new DesiredNode(NodeId.of(expNodeId), spec, expYamlNode.humanGating(),
+                            HookResolver.resolveHooks(expYamlNode, nodeResolver != null ? nodeResolver : resolver, expNodeId)));
+                    for (Object dep : expYamlNode.dependsOn()) {
+                        String depId = io.casehub.desiredstate.yaml.model.YamlNode.dependencyNodeId(dep);
+                        if (!expanded.excludedIds().contains(depId)) {
+                            expDeps.add(new Dependency(NodeId.of(expNodeId), NodeId.of(depId)));
+                        }
+                    }
+                }
+                graph = factory.of(expNodes, expDeps);
             } else {
                 Set<String> excludedNodeIds = new java.util.HashSet<>();
                 if (yamlGraph != null) {
@@ -258,13 +277,30 @@ public class YamlGraphRecorder {
                 Set<String> phaseNodeIds = new HashSet<>();
 
                 if (phaseHasForEach) {
-                    ForEachExpander.ExpandedNodes expanded = ForEachExpander.expand(
-                            yamlPhase.nodes(),
-                            yamlGraph.iterations() != null ? yamlGraph.iterations() : Map.of(),
-                            resolver, registry, mapper, 1000);
-                    phaseNodes = expanded.nodes();
-                    phaseDeps = new ArrayList<>(expanded.dependencies());
-                    phaseNodes.forEach(n -> phaseNodeIds.add(n.id().value()));
+                    var adapter = new YamlNodeForEachAdapter();
+                    io.casehub.yaml.core.foreach.ExpansionResult<io.casehub.desiredstate.yaml.model.YamlNode> expanded =
+                            io.casehub.yaml.core.foreach.ForEachExpander.expand(
+                                    yamlPhase.nodes(),
+                                    yamlGraph.iterations() != null ? yamlGraph.iterations() : Map.of(),
+                                    resolver, adapter, 1000, jsonArrayExpander(mapper));
+                    phaseNodes = new ArrayList<>();
+                    phaseDeps = new ArrayList<>();
+                    for (Map.Entry<String, io.casehub.desiredstate.yaml.model.YamlNode> expEntry : expanded.elements().entrySet()) {
+                        String expNodeId = expEntry.getKey();
+                        io.casehub.desiredstate.yaml.model.YamlNode expYamlNode = expEntry.getValue();
+                        Class<? extends NodeSpec> specClass = registry.resolve(expYamlNode.type());
+                        NodeSpec spec = mapper.convertValue(expYamlNode.spec(), specClass);
+                        VariableResolver nodeResolver = adapter.resolverFor(expNodeId);
+                        phaseNodes.add(new DesiredNode(NodeId.of(expNodeId), spec, expYamlNode.humanGating(),
+                                HookResolver.resolveHooks(expYamlNode, nodeResolver != null ? nodeResolver : resolver, expNodeId)));
+                        phaseNodeIds.add(expNodeId);
+                        for (Object dep : expYamlNode.dependsOn()) {
+                            String depId = io.casehub.desiredstate.yaml.model.YamlNode.dependencyNodeId(dep);
+                            if (!expanded.excludedIds().contains(depId)) {
+                                phaseDeps.add(new Dependency(NodeId.of(expNodeId), NodeId.of(depId)));
+                            }
+                        }
+                    }
                 } else {
                     Set<String> excludedNodeIds = new HashSet<>();
                     phaseNodes = new ArrayList<>();
@@ -382,6 +418,25 @@ public class YamlGraphRecorder {
         throw new IllegalArgumentException("Invalid completionCondition: " + condition);
     }
 
+
+    private static io.casehub.yaml.core.foreach.IterationValueExpander jsonArrayExpander(ObjectMapper mapper) {
+        return (value, ctx) -> {
+            if (value.startsWith("[")) {
+                try {
+                    List<?> parsed = mapper.readValue(value, new com.fasterxml.jackson.core.type.TypeReference<List<?>>() {});
+                    return parsed.stream().map(item -> {
+                        if (!(item instanceof String)) {
+                            throw new IllegalArgumentException("forEach group '" + ctx + "': values must be strings, got " + item.getClass().getSimpleName());
+                        }
+                        return (String) item;
+                    }).toList();
+                } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                    throw new IllegalArgumentException("forEach group '" + ctx + "': not a valid JSON array: " + value, e);
+                }
+            }
+            return List.of(value);
+        };
+    }
 
     private static String findTypeNameForClass(Map<String, String> typeRegistry, String className) {
         for (Map.Entry<String, String> entry : typeRegistry.entrySet()) {

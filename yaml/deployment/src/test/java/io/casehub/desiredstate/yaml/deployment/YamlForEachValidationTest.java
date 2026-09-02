@@ -1,6 +1,6 @@
 package io.casehub.desiredstate.yaml.deployment;
 
-import io.casehub.desiredstate.yaml.model.YamlIterationGroup;
+import io.casehub.yaml.core.foreach.IterationGroup;
 import io.casehub.desiredstate.yaml.model.YamlNode;
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +34,7 @@ class YamlForEachValidationTest {
                 "processor", new YamlNode("ingestion",
                         Map.of(), List.of("regional-source"), null, null, null, null, null));
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", List.of("us-east", "eu-west")));
+                new IterationGroup("region", List.of("us-east", "eu-west")));
         assertThatThrownBy(() -> YamlDesiredStateProcessor.validateForEach(
                 nodes, iterations, TYPE_REGISTRY, "test.yaml"))
                 .hasMessageContaining("processor")
@@ -50,8 +50,8 @@ class YamlForEachValidationTest {
                 "sink", new YamlNode("ingestion",
                         Map.of(), List.of("source"), null, null, "group-b", null, null));
         var iterations = Map.of(
-                "group-a", new YamlIterationGroup("region", List.of("us-east")),
-                "group-b", new YamlIterationGroup("zone", List.of("z1")));
+                "group-a", new IterationGroup("region", List.of("us-east")),
+                "group-b", new IterationGroup("zone", List.of("z1")));
         assertThatThrownBy(() -> YamlDesiredStateProcessor.validateForEach(
                 nodes, iterations, TYPE_REGISTRY, "test.yaml"))
                 .hasMessageContaining("group-a")
@@ -76,7 +76,7 @@ class YamlForEachValidationTest {
                 "inline-proc", new YamlNode("ingestion",
                         Map.of(), List.of("named-src"), null, null, inlineForEach, null, null));
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", List.of("us-east")));
+                new IterationGroup("region", List.of("us-east")));
         assertThatThrownBy(() -> YamlDesiredStateProcessor.validateForEach(
                 nodes, iterations, TYPE_REGISTRY, "test.yaml"))
                 .hasMessageContaining("inline-proc")
@@ -86,7 +86,7 @@ class YamlForEachValidationTest {
     @Test
     void validate_dotInForEachValue_throwsBuildError() {
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", List.of("us.east", "eu-west")));
+                new IterationGroup("region", List.of("us.east", "eu-west")));
         var nodes = Map.of("source", new YamlNode("data-source",
                 Map.of(), List.of(), null, null, "regional", null, null));
         assertThatThrownBy(() -> YamlDesiredStateProcessor.validateForEach(
@@ -105,7 +105,7 @@ class YamlForEachValidationTest {
         nodes.put("fixed-node", new YamlNode("data-source",
                 Map.of(), List.of(), null, null, null, null, null));
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", List.of("us-east", "eu-west")));
+                new IterationGroup("region", List.of("us-east", "eu-west")));
         assertThatCode(() -> YamlDesiredStateProcessor.validateForEach(
                 nodes, iterations, TYPE_REGISTRY, "test.yaml"))
                 .doesNotThrowAnyException();
@@ -119,7 +119,7 @@ class YamlForEachValidationTest {
         nodes.put("regional-source", new YamlNode("ingestion",
                 Map.of(), List.of("fixed-db"), null, null, "regional", null, null));
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", List.of("us-east")));
+                new IterationGroup("region", List.of("us-east")));
         assertThatCode(() -> YamlDesiredStateProcessor.validateForEach(
                 nodes, iterations, TYPE_REGISTRY, "test.yaml"))
                 .doesNotThrowAnyException();

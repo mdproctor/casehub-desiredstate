@@ -731,7 +731,7 @@ public class YamlDesiredStateProcessor {
     }
 
     static void validateForEach(Map<String, YamlNode> nodes,
-                               Map<String, io.casehub.desiredstate.yaml.model.YamlIterationGroup> iterations,
+                               Map<String, io.casehub.yaml.core.foreach.IterationGroup> iterations,
                                Map<String, String> typeRegistry, String fileName) {
         for (String nodeId : nodes.keySet()) {
             if (nodeId.contains(".")) {
@@ -766,7 +766,7 @@ public class YamlDesiredStateProcessor {
             }
         }
 
-        for (Map.Entry<String, io.casehub.desiredstate.yaml.model.YamlIterationGroup> entry :
+        for (Map.Entry<String, io.casehub.yaml.core.foreach.IterationGroup> entry :
                 iterations.entrySet()) {
             for (Object val : entry.getValue().inAsList()) {
                 if (val instanceof String s && s.contains(".") && !s.contains("${")) {
