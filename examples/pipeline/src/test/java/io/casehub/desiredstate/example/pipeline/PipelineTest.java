@@ -338,13 +338,13 @@ class PipelineTest {
         }
 
         // Event 4: creates AI_REVIEW node with dependency edge
-        List<GraphMutation> mutations4 = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> mutations4 = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
         assertThat(mutations4).hasSize(2);
         assertThat(mutations4.get(0)).isInstanceOf(GraphMutation.AddNode.class);
-        GraphMutation.AddNode addAiReview = (GraphMutation.AddNode) mutations4.get(0);
+        var addAiReview = (GraphMutation.AddNode<DesiredNode>) mutations4.get(0);
         assertThat(addAiReview.node().id()).isEqualTo(NodeId.of("ai-review-ingest"));
         assertThat(addAiReview.node().type()).isEqualTo(PipelineNodeTypes.AI_REVIEW);
-        assertThat(mutations4.get(1)).isInstanceOf(GraphMutation.AddDependency.class);
+        assertThat(mutations4.get(1)).isInstanceOf(GraphMutation.AddEdge.class);
 
         // Apply mutations to graph
         for (GraphMutation m : mutations4) {
@@ -356,10 +356,10 @@ class PipelineTest {
         assertThat(policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()))).isEmpty();
 
         // Event 7: tier 2 threshold reached, AI review present → HUMAN_REVIEW
-        List<GraphMutation> mutationsHuman = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> mutationsHuman = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
         assertThat(mutationsHuman).hasSize(2);
         assertThat(mutationsHuman.get(0)).isInstanceOf(GraphMutation.AddNode.class);
-        GraphMutation.AddNode addHumanReview = (GraphMutation.AddNode) mutationsHuman.get(0);
+        var addHumanReview = (GraphMutation.AddNode<DesiredNode>) mutationsHuman.get(0);
         assertThat(addHumanReview.node().id()).isEqualTo(NodeId.of("human-review-ingest"));
         assertThat(addHumanReview.node().type()).isEqualTo(PipelineNodeTypes.HUMAN_REVIEW);
         assertThat(addHumanReview.node().requiresHuman()).isTrue();
@@ -392,7 +392,7 @@ class PipelineTest {
         }
 
         // Fault 4: creates AI_REVIEW
-        List<GraphMutation> mutations = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
         assertThat(mutations).hasSize(2);
         for (GraphMutation m : mutations) {
             graph = graph.withMutation(m);
@@ -422,18 +422,18 @@ class PipelineTest {
         FaultEvent fault = new FaultEvent(NodeId.of("quality-gate"), FaultType.NODE_DEGRADED,
                                           "quality threshold breached");
 
-        List<GraphMutation> mutations = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
         assertThat(mutations).hasSize(2);
         assertThat(mutations.get(0)).isInstanceOf(GraphMutation.AddNode.class);
-        GraphMutation.AddNode addHuman = (GraphMutation.AddNode) mutations.get(0);
+        var addHuman = (GraphMutation.AddNode<DesiredNode>) mutations.get(0);
         assertThat(addHuman.node().id()).isEqualTo(NodeId.of("human-review-quality-gate"));
         assertThat(addHuman.node().type()).isEqualTo(PipelineNodeTypes.HUMAN_REVIEW);
         assertThat(addHuman.node().requiresHuman()).isTrue();
 
-        assertThat(mutations.get(1)).isInstanceOf(GraphMutation.AddDependency.class);
-        GraphMutation.AddDependency addDep = (GraphMutation.AddDependency) mutations.get(1);
-        assertThat(addDep.dependency().from()).isEqualTo(NodeId.of("human-review-quality-gate"));
-        assertThat(addDep.dependency().to()).isEqualTo(NodeId.of("quality-gate"));
+        assertThat(mutations.get(1)).isInstanceOf(GraphMutation.AddEdge.class);
+        var addEdge = (GraphMutation.AddEdge<?>) mutations.get(1);
+        assertThat(addEdge.from()).isEqualTo("human-review-quality-gate");
+        assertThat(addEdge.to()).isEqualTo("quality-gate");
     }
 
     @Test
@@ -447,19 +447,19 @@ class PipelineTest {
         FaultEvent fault = new FaultEvent(NodeId.of("click-schema"), FaultType.NODE_DEGRADED,
                                           "schema version drift detected");
 
-        List<GraphMutation> mutations = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1", fault, graph, new ActualState(Map.of()));
         assertThat(mutations).hasSize(2);
         assertThat(mutations.get(0)).isInstanceOf(GraphMutation.AddNode.class);
-        GraphMutation.AddNode addHuman = (GraphMutation.AddNode) mutations.get(0);
+        var addHuman = (GraphMutation.AddNode<DesiredNode>) mutations.get(0);
         assertThat(addHuman.node().id()).isEqualTo(NodeId.of("human-review-click-schema"));
 
-        assertThat(mutations.get(1)).isInstanceOf(GraphMutation.AddDependency.class);
-        GraphMutation.AddDependency addDep = (GraphMutation.AddDependency) mutations.get(1);
-        assertThat(addDep.dependency().from()).isEqualTo(NodeId.of("human-review-click-schema"));
-        assertThat(addDep.dependency().to()).isEqualTo(NodeId.of("click-schema"));
+        assertThat(mutations.get(1)).isInstanceOf(GraphMutation.AddEdge.class);
+        var addEdge = (GraphMutation.AddEdge<?>) mutations.get(1);
+        assertThat(addEdge.from()).isEqualTo("human-review-click-schema");
+        assertThat(addEdge.to()).isEqualTo("click-schema");
 
         // Assert no RemoveNode mutations returned
-        Optional<GraphMutation> removeNode = mutations.stream()
+        Optional<GraphMutation<DesiredNode>> removeNode = mutations.stream()
                                                       .filter(m -> m instanceof GraphMutation.RemoveNode)
                                                       .findAny();
         assertThat(removeNode).isEmpty();

@@ -56,20 +56,21 @@ public final class YamlRuleConverter {
 
         ObjectMapper coercionMapper = createCoercionMapper();
 
-        return new ResolvedRule.DeclarativeRule(name, patterns, bindingNames,
-                bindings -> evaluateActions(resolvedActions, bindings, registry,
-                        coercionMapper, name));
+        return new ResolvedRule.DeclarativeRule<>(name, patterns, bindingNames,
+                (java.util.Map<String, io.casehub.desiredstate.api.DesiredNode> bindings) ->
+                        evaluateActions(resolvedActions, bindings, registry,
+                                coercionMapper, name));
     }
 
     @SuppressWarnings("unchecked")
-    private static List<GraphMutation> evaluateActions(
+    private static List<GraphMutation<DesiredNode>> evaluateActions(
             List<Map<String, Object>> actions,
             Map<String, DesiredNode> bindings,
             NodeSpecRegistry registry,
             ObjectMapper mapper,
             String ruleName) {
 
-        List<GraphMutation> mutations = new ArrayList<>();
+        List<GraphMutation<DesiredNode>> mutations = new ArrayList<>();
 
         for (Map<String, Object> action : actions) {
             String actionType = action.keySet().iterator().next();
@@ -89,13 +90,13 @@ public final class YamlRuleConverter {
                     HumanGating gating = params.containsKey("humanGating")
                             ? HumanGating.valueOf((String) params.get("humanGating"))
                             : HumanGating.NONE;
-                    mutations.add(new GraphMutation.AddNode(
+                    mutations.add(new GraphMutation.AddNode<>(id,
                             new DesiredNode(NodeId.of(id), spec, gating)));
                 }
                 case "removeNode" -> {
                     String id = MatchTemplateResolver.resolveNodeId(
                             (String) params.get("id"), bindings, ruleName);
-                    mutations.add(new GraphMutation.RemoveNode(NodeId.of(id)));
+                    mutations.add(new GraphMutation.RemoveNode<>(id));
                 }
                 case "updateNode" -> {
                     String id = MatchTemplateResolver.resolveNodeId(
@@ -110,7 +111,7 @@ public final class YamlRuleConverter {
                     HumanGating gating = params.containsKey("humanGating")
                             ? HumanGating.valueOf((String) params.get("humanGating"))
                             : HumanGating.NONE;
-                    mutations.add(new GraphMutation.UpdateNode(NodeId.of(id),
+                    mutations.add(new GraphMutation.UpdateNode<>(id,
                             new DesiredNode(NodeId.of(id), spec, gating)));
                 }
                 case "addDependency" -> {
@@ -118,16 +119,14 @@ public final class YamlRuleConverter {
                             (String) params.get("from"), bindings);
                     String to = MatchTemplateResolver.resolve(
                             (String) params.get("to"), bindings);
-                    mutations.add(new GraphMutation.AddDependency(
-                            new Dependency(NodeId.of(from), NodeId.of(to))));
+                    mutations.add(new GraphMutation.AddEdge<>(from, to));
                 }
                 case "removeDependency" -> {
                     String from = MatchTemplateResolver.resolve(
                             (String) params.get("from"), bindings);
                     String to = MatchTemplateResolver.resolve(
                             (String) params.get("to"), bindings);
-                    mutations.add(new GraphMutation.RemoveDependency(
-                            new Dependency(NodeId.of(from), NodeId.of(to))));
+                    mutations.add(new GraphMutation.RemoveEdge<>(from, to));
                 }
                 default -> throw new IllegalArgumentException(
                         "Unknown action type: " + actionType);

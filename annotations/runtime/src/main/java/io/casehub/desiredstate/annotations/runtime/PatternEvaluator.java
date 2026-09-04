@@ -1,9 +1,5 @@
 package io.casehub.desiredstate.annotations.runtime;
 
-import io.casehub.desiredstate.api.DesiredNode;
-import io.casehub.desiredstate.api.DesiredStateGraph;
-import io.casehub.desiredstate.api.NodeType;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,43 +9,43 @@ public final class PatternEvaluator {
 
     private PatternEvaluator() {}
 
-    public static List<Map<String, DesiredNode>> evaluate(
-            DesiredStateGraph graph,
+    public static <N> List<Map<String, N>> evaluate(
+            io.casehub.desiredstate.annotations.runtime.graph.GraphView<N> view,
             List<PatternParameterDescriptor> patterns,
             String[] bindingNames) {
 
-        List<List<DesiredNode>> matchSets = new ArrayList<>();
+        List<List<N>> matchSets = new ArrayList<>();
         for (PatternParameterDescriptor p : patterns) {
             if (p.kind() == PatternKind.MATCH) {
                 if ("*".equals(p.nodeType())) {
-                    matchSets.add(new ArrayList<>(graph.nodes().values()));
+                    matchSets.add(new ArrayList<>(view.nodes().values()));
                 } else {
-                    NodeType targetType = NodeType.of(p.nodeType());
-                    matchSets.add(graph.nodes().values().stream()
-                            .filter(n -> n.type().equals(targetType))
-                            .toList());
+                    matchSets.add(view.nodes().values().stream()
+                                      .filter(n -> view.nodeType(n).equals(p.nodeType()))
+                                      .toList());
                 }
             }
         }
 
-        List<Map<String, DesiredNode>> results = new ArrayList<>();
-        for (List<DesiredNode> tuple : PatternMatchingSupport.crossProduct(matchSets)) {
-            Map<String, DesiredNode> bindings = new LinkedHashMap<>();
-            int matchIdx = 0;
+        List<Map<String, N>> results = new ArrayList<>();
+        for (List<N> tuple : PatternMatchingSupport.crossProduct(matchSets)) {
+            Map<String, N> bindings = new LinkedHashMap<>();
+            int            matchIdx = 0;
             for (int i = 0; i < patterns.size(); i++) {
                 if (patterns.get(i).kind() == PatternKind.MATCH) {
                     bindings.put(bindingNames[i], tuple.get(matchIdx++));
                 }
             }
-            expandChain(graph, patterns, bindingNames, bindings, 0, results);
+            expandChain(view, patterns, bindingNames, bindings, 0, results);
         }
         return results;
     }
 
-    private static void expandChain(DesiredStateGraph graph,
+    private static <N> void expandChain(
+            io.casehub.desiredstate.annotations.runtime.graph.GraphView<N> view,
             List<PatternParameterDescriptor> patterns, String[] bindingNames,
-            Map<String, DesiredNode> bindings, int startIndex,
-            List<Map<String, DesiredNode>> results) {
+            Map<String, N> bindings, int startIndex,
+            List<Map<String, N>> results) {
         int idx = startIndex;
         while (idx < patterns.size() && patterns.get(idx).kind() == PatternKind.MATCH) {
             idx++;
@@ -63,27 +59,27 @@ public final class PatternEvaluator {
 
         switch (p.kind()) {
             case DIRECT_DEP -> {
-                DesiredNode refNode = PatternMatchingSupport.resolveReference(p, idx, bindingNames, bindings);
-                for (DesiredNode neighbor : PatternMatchingSupport.findDirectNeighbors(graph, refNode, p)) {
+                N refNode = PatternMatchingSupport.resolveReference(p, idx, bindingNames, bindings);
+                for (N neighbor : PatternMatchingSupport.findDirectNeighbors(view, refNode, p)) {
                     var newBindings = new LinkedHashMap<>(bindings);
                     newBindings.put(bindingNames[idx], neighbor);
-                    expandChain(graph, patterns, bindingNames, newBindings, idx + 1, results);
+                    expandChain(view, patterns, bindingNames, newBindings, idx + 1, results);
                 }
             }
             case REACHES -> {
-                DesiredNode refNode = PatternMatchingSupport.resolveReference(p, idx, bindingNames, bindings);
-                for (DesiredNode reached : PatternMatchingSupport.findReachable(graph, refNode, p)) {
+                N refNode = PatternMatchingSupport.resolveReference(p, idx, bindingNames, bindings);
+                for (N reached : PatternMatchingSupport.findReachable(view, refNode, p)) {
                     var newBindings = new LinkedHashMap<>(bindings);
                     newBindings.put(bindingNames[idx], reached);
-                    expandChain(graph, patterns, bindingNames, newBindings, idx + 1, results);
+                    expandChain(view, patterns, bindingNames, newBindings, idx + 1, results);
                 }
             }
             case NOT_EXISTS -> {
                 boolean exists = p.of().isEmpty()
-                        ? PatternMatchingSupport.existsGlobal(graph, p)
-                        : PatternMatchingSupport.existsRelational(graph, bindings.get(p.of()), p);
-                if (exists) return;
-                expandChain(graph, patterns, bindingNames, bindings, idx + 1, results);
+                                 ? PatternMatchingSupport.existsGlobal(view, p)
+                                 : PatternMatchingSupport.existsRelational(view, bindings.get(p.of()), p);
+                if (exists) {return;}
+                expandChain(view, patterns, bindingNames, bindings, idx + 1, results);
             }
             default -> throw new IllegalStateException("Unexpected pattern kind: " + p.kind());
         }

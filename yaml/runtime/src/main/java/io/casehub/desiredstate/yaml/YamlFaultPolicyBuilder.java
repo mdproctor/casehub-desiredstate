@@ -81,7 +81,7 @@ public class YamlFaultPolicyBuilder {
             }
 
             @Override
-            public List<GraphMutation> onFault(String tenancyId, FaultEvent event,
+            public List<GraphMutation<DesiredNode>> onFault(String tenancyId, FaultEvent event,
                     io.casehub.desiredstate.api.DesiredStateGraph current,
                     io.casehub.desiredstate.api.ActualState actual) {
 

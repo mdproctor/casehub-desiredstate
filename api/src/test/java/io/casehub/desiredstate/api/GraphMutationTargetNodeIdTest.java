@@ -8,38 +8,38 @@ class GraphMutationTargetNodeIdTest {
 
     record TestSpec() implements NodeSpec {
         @Override
-        public NodeType nodeType() { return NodeType.of("test"); }
+        public NodeType nodeType() {return NodeType.of("test");}
     }
 
     @Test
     void addNodeTargetNodeId() {
-        var node = new DesiredNode(NodeId.of("a"), new TestSpec(), HumanGating.NONE);
-        var mutation = new GraphMutation.AddNode(node);
-        assertThat(mutation.targetNodeId()).isEqualTo(NodeId.of("a"));
+        var node     = new DesiredNode(NodeId.of("a"), new TestSpec(), HumanGating.NONE);
+        var mutation = new GraphMutation.AddNode<>(node.id().value(), node);
+        assertThat(mutation.targetNodeId()).isEqualTo("a");
     }
 
     @Test
     void removeNodeTargetNodeId() {
-        var mutation = new GraphMutation.RemoveNode(NodeId.of("b"));
-        assertThat(mutation.targetNodeId()).isEqualTo(NodeId.of("b"));
+        var mutation = new GraphMutation.RemoveNode<>("b");
+        assertThat(mutation.targetNodeId()).isEqualTo("b");
     }
 
     @Test
     void updateNodeTargetNodeId() {
-        var node = new DesiredNode(NodeId.of("c"), new TestSpec(), HumanGating.NONE);
-        var mutation = new GraphMutation.UpdateNode(NodeId.of("c"), node);
-        assertThat(mutation.targetNodeId()).isEqualTo(NodeId.of("c"));
+        var node     = new DesiredNode(NodeId.of("c"), new TestSpec(), HumanGating.NONE);
+        var mutation = new GraphMutation.UpdateNode<>("c", node);
+        assertThat(mutation.targetNodeId()).isEqualTo("c");
     }
 
     @Test
-    void addDependencyTargetNodeIdIsNull() {
-        var mutation = new GraphMutation.AddDependency(new Dependency(NodeId.of("a"), NodeId.of("b")));
+    void addEdgeTargetNodeIdIsNull() {
+        var mutation = new GraphMutation.AddEdge<>("a", "b");
         assertThat(mutation.targetNodeId()).isNull();
     }
 
     @Test
-    void removeDependencyTargetNodeIdIsNull() {
-        var mutation = new GraphMutation.RemoveDependency(new Dependency(NodeId.of("a"), NodeId.of("b")));
+    void removeEdgeTargetNodeIdIsNull() {
+        var mutation = new GraphMutation.RemoveEdge<>("a", "b");
         assertThat(mutation.targetNodeId()).isNull();
     }
 }

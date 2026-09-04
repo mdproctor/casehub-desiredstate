@@ -242,9 +242,9 @@ class PipelineYamlTest {
         assertThat(aiMutations).as("3rd failure triggers AI review").isNotEmpty();
 
         // Verify the AI review node carries the fault context from the template
-        io.casehub.desiredstate.api.GraphMutation.AddNode aiAdd = aiMutations.stream()
-                                                                             .filter(m -> m instanceof io.casehub.desiredstate.api.GraphMutation.AddNode)
-                                                                             .map(m -> (io.casehub.desiredstate.api.GraphMutation.AddNode) m)
+        io.casehub.desiredstate.api.GraphMutation.AddNode<io.casehub.desiredstate.api.DesiredNode> aiAdd = aiMutations.stream()
+                                                                             .filter(m -> m instanceof io.casehub.desiredstate.api.GraphMutation.AddNode<?>)
+                                                                             .map(m -> (io.casehub.desiredstate.api.GraphMutation.AddNode<io.casehub.desiredstate.api.DesiredNode>) m)
                                                                              .findFirst().orElseThrow();
 
         io.casehub.desiredstate.example.pipeline.AiReviewSpec aiSpec =

@@ -1,7 +1,6 @@
 package io.casehub.desiredstate.runtime;
 
 import io.casehub.desiredstate.api.CyclicDependencyException;
-import io.casehub.desiredstate.api.DanglingDependencyException;
 import io.casehub.desiredstate.api.Dependency;
 import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.DesiredStateGraph;
@@ -231,19 +230,19 @@ final class ImmutableDesiredStateGraph implements DesiredStateGraph {
     }
 
     @Override
-    public DesiredStateGraph withMutation(GraphMutation mutation) {
+    public DesiredStateGraph withMutation(GraphMutation<DesiredNode> mutation) {
         return switch (mutation) {
-            case GraphMutation.AddNode m -> withNode(m.node());
-            case GraphMutation.RemoveNode m -> withoutNode(m.id());
-            case GraphMutation.UpdateNode m -> {
-                if (!nodes.containsKey(m.id())) {
+            case GraphMutation.AddNode<DesiredNode> m -> withNode(m.node());
+            case GraphMutation.RemoveNode<?> m -> withoutNode(NodeId.of(m.id()));
+            case GraphMutation.UpdateNode<DesiredNode> m -> {
+                if (!nodes.containsKey(NodeId.of(m.id()))) {
                     throw new IllegalArgumentException(
-                            "Cannot update node " + m.id().value() + ": not in graph");
+                            "Cannot update node " + m.id() + ": not in graph");
                 }
                 yield withNode(m.adaptedNode());
             }
-            case GraphMutation.AddDependency m -> withDependency(m.dependency());
-            case GraphMutation.RemoveDependency m -> withoutDependency(m.dependency());
+            case GraphMutation.AddEdge<?> m -> withDependency(new Dependency(NodeId.of(m.from()), NodeId.of(m.to())));
+            case GraphMutation.RemoveEdge<?> m -> withoutDependency(new Dependency(NodeId.of(m.from()), NodeId.of(m.to())));
         };
     }
 

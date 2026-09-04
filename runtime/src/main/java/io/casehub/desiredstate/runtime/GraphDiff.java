@@ -17,8 +17,8 @@ final class GraphDiff {
 
     private GraphDiff() {}
 
-    static List<GraphMutation> computeMutations(DesiredStateGraph current, DesiredStateGraph adapted) {
-        List<GraphMutation> mutations = new ArrayList<>();
+    static List<GraphMutation<DesiredNode>> computeMutations(DesiredStateGraph current, DesiredStateGraph adapted) {
+        List<GraphMutation<DesiredNode>> mutations = new ArrayList<>();
 
         Set<NodeType> adaptedTypes = new HashSet<>();
         for (DesiredNode node : adapted.nodes().values()) {
@@ -26,22 +26,22 @@ final class GraphDiff {
         }
 
         for (Map.Entry<NodeId, DesiredNode> entry : adapted.nodes().entrySet()) {
-            NodeId id = entry.getKey();
+            NodeId      id          = entry.getKey();
             DesiredNode adaptedNode = entry.getValue();
             DesiredNode currentNode = current.nodes().get(id);
 
             if (currentNode == null) {
-                mutations.add(new GraphMutation.AddNode(adaptedNode));
+                mutations.add(new GraphMutation.AddNode<>(adaptedNode.id().value(), adaptedNode));
             } else if (!currentNode.equals(adaptedNode)) {
-                mutations.add(new GraphMutation.UpdateNode(id, adaptedNode));
+                mutations.add(new GraphMutation.UpdateNode<>(id.value(), adaptedNode));
             }
         }
 
         for (Map.Entry<NodeId, DesiredNode> entry : current.nodes().entrySet()) {
-            NodeId id = entry.getKey();
+            NodeId      id          = entry.getKey();
             DesiredNode currentNode = entry.getValue();
             if (adaptedTypes.contains(currentNode.type()) && !adapted.nodes().containsKey(id)) {
-                mutations.add(new GraphMutation.RemoveNode(id));
+                mutations.add(new GraphMutation.RemoveNode<>(id.value()));
             }
         }
 
@@ -52,7 +52,7 @@ final class GraphDiff {
         for (Dependency dep : adapted.dependencies()) {
             if (!current.dependencies().contains(dep)) {
                 if (allKnownNodes.contains(dep.from()) && allKnownNodes.contains(dep.to())) {
-                    mutations.add(new GraphMutation.AddDependency(dep));
+                    mutations.add(new GraphMutation.AddEdge<>(dep.from().value(), dep.to().value()));
                 }
             }
         }
@@ -68,7 +68,7 @@ final class GraphDiff {
         for (Dependency dep : current.dependencies()) {
             if (inScopeNodeIds.contains(dep.from()) && inScopeNodeIds.contains(dep.to())) {
                 if (!adapted.dependencies().contains(dep)) {
-                    mutations.add(new GraphMutation.RemoveDependency(dep));
+                    mutations.add(new GraphMutation.RemoveEdge<>(dep.from().value(), dep.to().value()));
                 }
             }
         }
@@ -76,5 +76,10 @@ final class GraphDiff {
         return mutations;
     }
 
-    static NodeId targetNodeId(GraphMutation mutation) {return mutation.targetNodeId();}
+    static String targetNodeId(GraphMutation<?> mutation) {
+        if (mutation instanceof GraphMutation.AddNode<?> add && add.node() instanceof DesiredNode dn) {
+            return dn.id().value();
+        }
+        return mutation.targetNodeId();
+    }
 }

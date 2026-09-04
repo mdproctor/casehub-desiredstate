@@ -251,7 +251,7 @@ class ReconciliationLoopTest {
         DesiredNode replacement = new DesiredNode(NodeId.of("a-replacement"), new TestSpec("replacement"), HumanGating.NONE);
         FaultPolicy addReplacementPolicy = (tid, event, current, actual) -> {
             if (event.node().equals(NodeId.of("a"))) {
-                return List.of(new GraphMutation.AddNode(replacement));
+                return List.of(new GraphMutation.AddNode<>(replacement.id().value(), replacement));
             }
             return List.of();
         };
@@ -329,7 +329,7 @@ class ReconciliationLoopTest {
         DesiredNode fixNode = new DesiredNode(NodeId.of("a-fix"), new TestSpec("fix"), HumanGating.NONE);
         FaultPolicy addFixPolicy = (tid, event, current, actual) -> {
             if (event.type() == FaultType.NODE_DEGRADED && event.node().equals(NodeId.of("a"))) {
-                return List.of(new GraphMutation.AddNode(fixNode));
+                return List.of(new GraphMutation.AddNode<>(fixNode.id().value(), fixNode));
             }
             return List.of();
         };

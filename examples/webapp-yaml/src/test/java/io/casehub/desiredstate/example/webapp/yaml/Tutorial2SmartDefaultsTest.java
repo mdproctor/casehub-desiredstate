@@ -8,6 +8,7 @@ import io.casehub.desiredstate.api.DesiredStateGraph;
 import io.casehub.desiredstate.api.FaultEvent;
 import io.casehub.desiredstate.api.FaultType;
 import io.casehub.desiredstate.api.GoalCompiler;
+import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.GraphMutation;
 import io.casehub.desiredstate.api.InMemoryFaultCountStore;
 import io.casehub.desiredstate.api.NodeId;
@@ -137,9 +138,9 @@ class Tutorial2SmartDefaultsTest {
         var mutations = policy.onFault("store-1", event, graph, actual);
 
         assertThat(mutations).isNotEmpty();
-        GraphMutation.AddNode addNode = mutations.stream()
-                .filter(m -> m instanceof GraphMutation.AddNode)
-                .map(m -> (GraphMutation.AddNode) m)
+        GraphMutation.AddNode<DesiredNode> addNode = mutations.stream()
+                .filter(m -> m instanceof GraphMutation.AddNode<?>)
+                .map(m -> (GraphMutation.AddNode<DesiredNode>) m)
                 .findFirst().orElseThrow();
         assertThat(addNode.node().type()).isEqualTo(StoreNodeTypes.FRAUD_REVIEW);
 

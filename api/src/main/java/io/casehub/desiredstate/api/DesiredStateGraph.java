@@ -16,7 +16,8 @@ public interface DesiredStateGraph {
     DesiredStateGraph withoutNode(NodeId id);
     DesiredStateGraph withDependency(Dependency dep);
     DesiredStateGraph withoutDependency(Dependency dep);
-    DesiredStateGraph withMutation(GraphMutation mutation);
+
+    DesiredStateGraph withMutation(GraphMutation<DesiredNode> mutation);
     DesiredStateGraph overlay(DesiredStateGraph other);
     DesiredStateGraph connect(DesiredStateGraph other);
 

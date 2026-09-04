@@ -110,12 +110,10 @@ class SpiContractTest {
     }
 
     @Test void conflictingMutationException_carriesBothMutations() {
-        var id = new NodeId("lib");
-        GraphMutation a = new GraphMutation.RemoveNode(id);
-        GraphMutation b = new GraphMutation.UpdateNode(id, new DesiredNode(id, new TestSpec("new"), HumanGating.NONE));
-        var ex = new ConflictingMutationException(id, a, b);
-        assertThat(ex.getNodeId()).isEqualTo(id);
+        GraphMutation<?> a  = new GraphMutation.RemoveNode<>("lib");
+        GraphMutation<?> b  = new GraphMutation.UpdateNode<>("lib", new DesiredNode(new NodeId("lib"), new TestSpec("new"), HumanGating.NONE));
+        var              ex = new ConflictingMutationException("lib", a, b);
+        assertThat(ex.getNodeId()).isEqualTo("lib");
         assertThat(ex.getMutationA()).isEqualTo(a);
-        assertThat(ex.getMutationB()).isEqualTo(b);
-    }
+        assertThat(ex.getMutationB()).isEqualTo(b);}
 }

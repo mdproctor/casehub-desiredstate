@@ -2,11 +2,11 @@ package io.casehub.desiredstate.runtime;
 
 import io.casehub.desiredstate.api.ActualState;
 import io.casehub.desiredstate.api.ConflictingMutationException;
+import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.DesiredStateGraph;
 import io.casehub.desiredstate.api.FaultEvent;
 import io.casehub.desiredstate.api.FaultPolicy;
 import io.casehub.desiredstate.api.GraphMutation;
-import io.casehub.desiredstate.api.NodeId;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.ArrayList;
@@ -30,18 +30,18 @@ public class FaultPolicyEngine {
         this.policies = List.copyOf(policies);
     }
 
-    public List<GraphMutation> evaluate(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
-        List<GraphMutation> allMutations = new ArrayList<>();
+    public List<GraphMutation<DesiredNode>> evaluate(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
+        List<GraphMutation<DesiredNode>> allMutations = new ArrayList<>();
         for (FaultPolicy policy : policies) {
-            List<GraphMutation> policyMutations = policy.onFault(tenancyId, event, current, actual);
+            List<GraphMutation<DesiredNode>> policyMutations = policy.onFault(tenancyId, event, current, actual);
             allMutations.addAll(policyMutations);
         }
 
-        Map<NodeId, List<GraphMutation>> byNode              = new HashMap<>();
-        List<GraphMutation>              dependencyMutations = new ArrayList<>();
+        Map<String, List<GraphMutation<DesiredNode>>> byNode              = new HashMap<>();
+        List<GraphMutation<DesiredNode>>              dependencyMutations = new ArrayList<>();
 
-        for (GraphMutation mutation : allMutations) {
-            NodeId targetNodeId = getTargetNodeId(mutation);
+        for (GraphMutation<DesiredNode> mutation : allMutations) {
+            String targetNodeId = getTargetNodeId(mutation);
             if (targetNodeId != null) {
                 byNode.computeIfAbsent(targetNodeId, k -> new ArrayList<>()).add(mutation);
             } else {
@@ -49,18 +49,18 @@ public class FaultPolicyEngine {
             }
         }
 
-        List<GraphMutation> merged = new ArrayList<>();
+        List<GraphMutation<DesiredNode>> merged = new ArrayList<>();
 
-        for (Map.Entry<NodeId, List<GraphMutation>> entry : byNode.entrySet()) {
-            NodeId              nodeId        = entry.getKey();
-            List<GraphMutation> nodeMutations = entry.getValue();
+        for (Map.Entry<String, List<GraphMutation<DesiredNode>>> entry : byNode.entrySet()) {
+            String                           nodeId        = entry.getKey();
+            List<GraphMutation<DesiredNode>> nodeMutations = entry.getValue();
 
-            Set<GraphMutation> uniqueMutations = new LinkedHashSet<>(nodeMutations);
+            Set<GraphMutation<DesiredNode>> uniqueMutations = new LinkedHashSet<>(nodeMutations);
 
             if (uniqueMutations.size() > 1) {
-                Iterator<GraphMutation> it     = uniqueMutations.iterator();
-                GraphMutation           first  = it.next();
-                GraphMutation           second = it.next();
+                Iterator<GraphMutation<DesiredNode>> it     = uniqueMutations.iterator();
+                GraphMutation<DesiredNode>           first  = it.next();
+                GraphMutation<DesiredNode>           second = it.next();
                 throw new ConflictingMutationException(nodeId, first, second);
             }
 
@@ -72,8 +72,5 @@ public class FaultPolicyEngine {
         return merged;
     }
 
-    /**
-     * Extracts the target NodeId from a mutation, or null for dependency mutations.
-     */
-    private NodeId getTargetNodeId(GraphMutation mutation) {return GraphDiff.targetNodeId(mutation);}
+    private String getTargetNodeId(GraphMutation<?> mutation) {return GraphDiff.targetNodeId(mutation);}
 }

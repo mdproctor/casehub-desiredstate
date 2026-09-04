@@ -1,13 +1,14 @@
 package io.casehub.desiredstate.api;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.Test;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TypesTest {
     record TestSpec(String name) implements NodeSpec { @Override public NodeType nodeType() { return NodeType.of("test"); } }
@@ -32,17 +33,16 @@ class TypesTest {
     };
 
     @Test void graphMutation_sealedExhaustive() {
-        var node = new DesiredNode(new NodeId("a"), new TestSpec("x"), HumanGating.NONE);
-        GraphMutation mutation = new GraphMutation.AddNode(node);
+        var                        node     = new DesiredNode(new NodeId("a"), new TestSpec("x"), HumanGating.NONE);
+        GraphMutation<DesiredNode> mutation = new GraphMutation.AddNode<>(node.id().value(), node);
         String result = switch (mutation) {
-            case GraphMutation.AddNode m -> "add:" + m.node().id().value();
-            case GraphMutation.RemoveNode m -> "remove:" + m.id().value();
-            case GraphMutation.UpdateNode m -> "update:" + m.id().value();
-            case GraphMutation.AddDependency m -> "addDep:" + m.dependency().from().value();
-            case GraphMutation.RemoveDependency m -> "rmDep:" + m.dependency().from().value();
+            case GraphMutation.AddNode<DesiredNode> m -> "add:" + m.node().id().value();
+            case GraphMutation.RemoveNode<?> m -> "remove:" + m.id();
+            case GraphMutation.UpdateNode<?> m -> "update:" + m.id();
+            case GraphMutation.AddEdge<?> m -> "addEdge:" + m.from();
+            case GraphMutation.RemoveEdge<?> m -> "rmEdge:" + m.from();
         };
-        assertThat(result).isEqualTo("add:a");
-    }
+        assertThat(result).isEqualTo("add:a");}
 
     @Test void provisionResult_sealed() {
         ProvisionResult success = new ProvisionResult.Success();

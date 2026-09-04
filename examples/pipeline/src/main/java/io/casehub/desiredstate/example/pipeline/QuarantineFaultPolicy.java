@@ -28,7 +28,7 @@ public class QuarantineFaultPolicy implements FaultPolicy {
         this.world = world;
     }
 
-    public List<GraphMutation> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
+    public List<GraphMutation<DesiredNode>> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
         if (event.type() != FaultType.NODE_DEGRADED) {
             return List.of();
         }

@@ -40,7 +40,7 @@ Immutable directed acyclic graph of `DesiredNode` instances connected by `Depend
 **Core operations:**
 - `withNode(DesiredNode)`, `withoutNode(NodeId)` -- add/remove nodes
 - `withDependency(Dependency)`, `withoutDependency(Dependency)` -- add/remove edges
-- `withMutation(GraphMutation)` -- apply a single mutation
+- `withMutation(GraphMutation<DesiredNode>)` -- apply a single mutation
 - `overlay(DesiredStateGraph)` -- merge two graphs (union; shared nodes must be equal)
 - `connect(DesiredStateGraph)` -- join graphs (all leaves of this -> all roots of other)
 - `filterByTypes(Set<NodeType>)` -- subtractive filter, removes nodes not matching types
@@ -110,7 +110,7 @@ SPI: `execute(TransitionPlan plan, String tenancyId) -> TransitionResult`. Two i
 
 ### FaultPolicy / FaultPolicyEngine
 
-SPI: `onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) -> List<GraphMutation>`. Called when provisioning fails, nodes drift, approvals are rejected, or human nodes time out. Policies return graph mutations that the reconciliation loop applies to the desired graph.
+SPI: `onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) -> List<GraphMutation<DesiredNode>>`. Called when provisioning fails, nodes drift, approvals are rejected, or human nodes time out. Policies return graph mutations that the reconciliation loop applies to the desired graph.
 
 **FaultType enum:** `NODE_DESTROYED`, `NODE_DEGRADED`, `PROVISION_FAILED`, `DEPROVISION_FAILED`, `HUMAN_NODE_TIMEOUT`, `DEPENDENCY_UNAVAILABLE`, `APPROVAL_REJECTED`.
 
@@ -137,11 +137,11 @@ Tier nodeTypes are auto-merged into `ignoreTypes`. Evaluation is highest-tier-fi
 
 ### GraphMutation
 
-Sealed interface with five variants: `AddNode(DesiredNode)`, `RemoveNode(NodeId)`, `UpdateNode(NodeId, DesiredNode)`, `AddDependency(Dependency)`, `RemoveDependency(Dependency)`.
+Sealed generic interface `GraphMutation<N>` with five variants: `AddNode<N>(String id, N node)`, `RemoveNode<N>(String id)`, `UpdateNode<N>(String id, N adaptedNode)`, `AddEdge<N>(String from, String to)`, `RemoveEdge<N>(String from, String to)`. All desiredstate consumers use `GraphMutation<DesiredNode>`. Variant renames: `AddDependency` → `AddEdge`, `RemoveDependency` → `RemoveEdge`.
 
 ### GraphMutations
 
-Static utility: `GraphMutations.addNodeDependingOn(DesiredNode, NodeId)` returns `[AddNode, AddDependency]` -- the common pattern for adding a node with a dependency edge to an existing node.
+Static utility: `GraphMutations.addNodeDependingOn(DesiredNode, NodeId)` returns `List<GraphMutation<DesiredNode>>` (`[AddNode, AddEdge]`) -- the common pattern for adding a node with a dependency edge to an existing node.
 
 ### HumanNodeHandler
 

@@ -41,7 +41,7 @@ class CbrProposalTrackerTest {
     void proposalMatchedWithSucceeded() {
         var nodeId = new NodeId("n1");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of(nodeId, new StepOutcome.Succeeded()));
         var outcomes = tracker.matchOutcomes("t1", result, factory.empty());
@@ -60,7 +60,7 @@ class CbrProposalTrackerTest {
     void proposalMatchedWithFailed() {
         var nodeId = new NodeId("n1");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of(nodeId, new StepOutcome.Failed("err")));
         var outcomes = tracker.matchOutcomes("t1", result, factory.empty());
@@ -75,7 +75,7 @@ class CbrProposalTrackerTest {
     void proposalMatchedWithRejected_countsAsFailure() {
         var nodeId = new NodeId("n1");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of(nodeId, new StepOutcome.Rejected("denied")));
         var outcomes = tracker.matchOutcomes("t1", result, factory.empty());
@@ -88,7 +88,7 @@ class CbrProposalTrackerTest {
     void nodeNotInResultButInGraph_alreadyPresent() {
         var nodeId = new NodeId("n1");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of());
         var node = new DesiredNode(nodeId, new TestSpec("v"), HumanGating.NONE);
@@ -103,7 +103,7 @@ class CbrProposalTrackerTest {
     void nodeNotInResultNotInGraph_superseded_noOutcome() {
         var nodeId = new NodeId("n1");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of());
         var outcomes = tracker.matchOutcomes("t1", result, factory.empty());
@@ -115,7 +115,7 @@ class CbrProposalTrackerTest {
     void allNodesSkipped_noOutcomeEmitted() {
         var nodeId = new NodeId("n1");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of(nodeId, new StepOutcome.Skipped("skip")));
         var outcomes = tracker.matchOutcomes("t1", result, factory.empty());
@@ -129,7 +129,7 @@ class CbrProposalTrackerTest {
         var n2 = new NodeId("n2");
         var n3 = new NodeId("n3");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(n1, n2, n3), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(n1.value(), n2.value(), n3.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of(
             n1, new StepOutcome.Succeeded(),
@@ -148,9 +148,9 @@ class CbrProposalTrackerTest {
         var n1 = new NodeId("n1");
         var n2 = new NodeId("n2");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-A", CbrPath.FAULT, Set.of(n1), Instant.now()));
+            "src-A", CbrPath.FAULT, Set.of(n1.value()), Instant.now()));
         tracker.recordProposal("t1", new CbrProposal(
-            "src-B", CbrPath.SITUATION, Set.of(n2), Instant.now()));
+            "src-B", CbrPath.SITUATION, Set.of(n2.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of(
             n1, new StepOutcome.Succeeded(),
@@ -167,7 +167,7 @@ class CbrProposalTrackerTest {
     @Test
     void clearTenant_removesPendingProposals() {
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(new NodeId("n1")), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of("n1"), Instant.now()));
         tracker.clearTenant("t1");
 
         var result = new TransitionResult(Map.of(new NodeId("n1"), new StepOutcome.Succeeded()));
@@ -178,7 +178,7 @@ class CbrProposalTrackerTest {
     void differentTenants_noInterference() {
         var nodeId = new NodeId("n1");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of(nodeId, new StepOutcome.Succeeded()));
         assertThat(tracker.matchOutcomes("t2", result, factory.empty())).isEmpty();
@@ -189,7 +189,7 @@ class CbrProposalTrackerTest {
     void matchOutcomes_consumesProposals() {
         var nodeId = new NodeId("n1");
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         var result = new TransitionResult(Map.of(nodeId, new StepOutcome.Succeeded()));
         tracker.matchOutcomes("t1", result, factory.empty());
@@ -201,7 +201,7 @@ class CbrProposalTrackerTest {
         var nodeId = new NodeId("n1");
         var proposedAt = Instant.now().minusSeconds(10);
         tracker.recordProposal("t1", new CbrProposal(
-            "src-1", CbrPath.FAULT, Set.of(nodeId), proposedAt));
+            "src-1", CbrPath.FAULT, Set.of(nodeId.value()), proposedAt));
 
         var result = new TransitionResult(Map.of(nodeId, new StepOutcome.Succeeded()));
         var outcomes = tracker.matchOutcomes("t1", result, factory.empty());

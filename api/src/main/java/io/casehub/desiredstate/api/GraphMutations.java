@@ -5,10 +5,10 @@ import java.util.List;
 public final class GraphMutations {
     private GraphMutations() {}
 
-    public static List<GraphMutation> addNodeDependingOn(DesiredNode node, NodeId dependsOn) {
+    public static List<GraphMutation<DesiredNode>> addNodeDependingOn(DesiredNode node, NodeId dependsOn) {
         return List.of(
-            new GraphMutation.AddNode(node),
-            new GraphMutation.AddDependency(new Dependency(node.id(), dependsOn))
-        );
+                new GraphMutation.AddNode<>(node.id().value(), node),
+                new GraphMutation.AddEdge<>(node.id().value(), dependsOn.value())
+                      );
     }
 }

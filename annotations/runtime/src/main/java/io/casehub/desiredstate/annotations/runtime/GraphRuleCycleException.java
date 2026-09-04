@@ -1,22 +1,20 @@
 package io.casehub.desiredstate.annotations.runtime;
 
-import io.casehub.desiredstate.api.NodeId;
-
 import java.util.List;
-import java.util.stream.Collectors;
 
 public class GraphRuleCycleException extends RuntimeException {
     private final List<String> ruleNames;
-    private final List<NodeId> cyclePath;
+    private final List<String> cyclePath;
 
-    public GraphRuleCycleException(List<String> ruleNames, List<NodeId> cyclePath) {
+    public GraphRuleCycleException(List<String> ruleNames, List<String> cyclePath) {
         super("Graph rules introduced a cycle: "
-              + cyclePath.stream().map(NodeId::value).collect(Collectors.joining(" → "))
+              + String.join(" → ", cyclePath)
               + ". Rules: " + String.join(", ", ruleNames));
         this.ruleNames = ruleNames;
         this.cyclePath = cyclePath;
     }
 
-    public List<String> getRuleNames() { return ruleNames; }
-    public List<NodeId> getCyclePath() { return cyclePath; }
+    public List<String> getRuleNames() {return ruleNames;}
+
+    public List<String> getCyclePath() {return cyclePath;}
 }

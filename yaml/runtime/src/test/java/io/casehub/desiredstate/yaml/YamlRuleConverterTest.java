@@ -63,7 +63,7 @@ class YamlRuleConverterTest {
         NodeSpecRegistry registry = NodeSpecRegistry.of(TYPE_REGISTRY);
         VariableResolver resolver = new VariableResolver(Map.of("var", (VariableSource) Map.<String, String>of()::get), Set.of("match", "fault"));
 
-        ResolvedRule.DeclarativeRule rule = YamlRuleConverter.toDeclarativeRule(
+        ResolvedRule.DeclarativeRule<?> rule = YamlRuleConverter.toDeclarativeRule(
                 "ensure-monitoring", yamlRule, resolver, registry);
 
         assertThat(rule.name()).isEqualTo("ensure-monitoring");
@@ -75,7 +75,11 @@ class YamlRuleConverterTest {
                 new SinkSpec("s3://gold/"), HumanGating.NONE);
         DesiredStateGraph graph = factory.of(List.of(sinkNode), List.of());
 
-        var result = new GraphRuleEngine().evaluate(graph, List.of(rule));
+        var dsAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+        var dsView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, dsAdapter);
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        var evaluated = new GraphRuleEngine().evaluate(dsView, (java.util.List) List.of(rule));
+        var result = ((io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView) evaluated).graph();
         assertThat(result.nodes()).hasSize(2);
         assertThat(result.nodes()).containsKey(NodeId.of("monitor-warehouse-sink"));
 
@@ -102,14 +106,18 @@ class YamlRuleConverterTest {
         NodeSpecRegistry registry = NodeSpecRegistry.of(TYPE_REGISTRY);
         VariableResolver resolver = new VariableResolver(Map.of("var", (VariableSource) Map.of("alert_prefix", "PROD")::get), Set.of("match", "fault"));
 
-        ResolvedRule.DeclarativeRule rule = YamlRuleConverter.toDeclarativeRule(
+        ResolvedRule.DeclarativeRule<?> rule = YamlRuleConverter.toDeclarativeRule(
                 "alert-rule", yamlRule, resolver, registry);
 
         DesiredNode sinkNode = new DesiredNode(NodeId.of("my-sink"),
                 new SinkSpec("s3://out/"), HumanGating.NONE);
         DesiredStateGraph graph = factory.of(List.of(sinkNode), List.of());
 
-        var result = new GraphRuleEngine().evaluate(graph, List.of(rule));
+        var dsAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+        var dsView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, dsAdapter);
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        var evaluated = new GraphRuleEngine().evaluate(dsView, (java.util.List) List.of(rule));
+        var result = ((io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView) evaluated).graph();
         MonitorSpec monSpec = (MonitorSpec) result.nodes()
                 .get(NodeId.of("monitor-my-sink")).spec();
         assertThat(monSpec.target()).isEqualTo("PROD-my-sink");
@@ -126,14 +134,18 @@ class YamlRuleConverterTest {
         NodeSpecRegistry registry = NodeSpecRegistry.of(TYPE_REGISTRY);
         VariableResolver resolver = new VariableResolver(Map.of("var", (VariableSource) Map.<String, String>of()::get), Set.of("match", "fault"));
 
-        ResolvedRule.DeclarativeRule rule = YamlRuleConverter.toDeclarativeRule(
+        ResolvedRule.DeclarativeRule<?> rule = YamlRuleConverter.toDeclarativeRule(
                 "remove-sinks", yamlRule, resolver, registry);
 
         DesiredNode sinkNode = new DesiredNode(NodeId.of("my-sink"),
                 new SinkSpec("s3://out/"), HumanGating.NONE);
         DesiredStateGraph graph = factory.of(List.of(sinkNode), List.of());
 
-        var result = new GraphRuleEngine().evaluate(graph, List.of(rule));
+        var dsAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+        var dsView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, dsAdapter);
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        var evaluated = new GraphRuleEngine().evaluate(dsView, (java.util.List) List.of(rule));
+        var result = ((io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView) evaluated).graph();
         assertThat(result.nodes()).isEmpty();
     }
 }

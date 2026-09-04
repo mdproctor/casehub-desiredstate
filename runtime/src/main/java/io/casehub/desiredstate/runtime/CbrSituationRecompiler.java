@@ -92,7 +92,7 @@ public class CbrSituationRecompiler implements SituationRecompiler {
         LOG.log(Level.INFO, "cbr.selected: sourceId={0}, confidence={1}, path=situation",
                 new Object[]{selected.sourceId(), selected.confidence()});
 
-        Set<NodeId> affectedNodeIds = GraphDiff.computeMutations(current, selected.graph())
+        Set<String> affectedNodeIds = GraphDiff.computeMutations(current, selected.graph())
             .stream()
             .map(GraphDiff::targetNodeId)
             .filter(Objects::nonNull)

@@ -17,7 +17,7 @@ import java.util.List;
 public class HeroRaidFaultPolicy implements FaultPolicy {
 
     @Override
-    public List<GraphMutation> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
+    public List<GraphMutation<DesiredNode>> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
         if (event.type() != FaultType.NODE_DESTROYED) {
             return List.of();
         }
@@ -27,6 +27,6 @@ public class HeroRaidFaultPolicy implements FaultPolicy {
             return List.of();
         }
 
-        return List.of(new GraphMutation.AddNode(destroyedNode));
+        return List.of(new GraphMutation.AddNode<>(destroyedNode.id().value(), destroyedNode));
     }
 }

@@ -249,12 +249,12 @@ class ForceDistributionTest {
         // Zone spec updated with redistributed ratios
         assertThat(mutations).anyMatch(m ->
             m instanceof GraphMutation.UpdateNode u
-            && u.id().equals(NodeId.of("zone-frontier")));
+            && u.id().equals("zone-frontier"));
 
         // Surviving unit spec updated with new strength
         assertThat(mutations).anyMatch(m ->
             m instanceof GraphMutation.UpdateNode u
-            && u.id().equals(NodeId.of("unit-cell-4-1")));
+            && u.id().equals("unit-cell-4-1"));
     }
 
     // --- Layer 4: Strategic pivot ---
@@ -273,7 +273,7 @@ class ForceDistributionTest {
         executeAll(planner.plan(graph, adapter.readActual(graph, "test")), graph, graph);
 
         var policy = new ZoneRebalanceFaultPolicy();
-        var allMutations = new ArrayList<List<GraphMutation>>();
+        var allMutations = new ArrayList<List<GraphMutation<DesiredNode>>>();
 
         // 3 consecutive cycles of losses
         for (int cycle = 0; cycle < 3; cycle++) {

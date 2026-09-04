@@ -98,7 +98,7 @@ class ReconciliationLoopCbrOutcomeTest {
         actualAdapter.setStatuses(Map.of(nodeId, NodeStatus.PRESENT));
 
         cbrTracker.recordProposal("t1", new CbrProposal(
-            "case-42", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "case-42", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         loop.start("t1", graph);
         await().atMost(AWAIT).until(() ->
@@ -120,7 +120,7 @@ class ReconciliationLoopCbrOutcomeTest {
         actualAdapter.setStatuses(Map.of());
 
         cbrTracker.recordProposal("t1", new CbrProposal(
-            "case-99", CbrPath.SITUATION, Set.of(nodeId), Instant.now()));
+            "case-99", CbrPath.SITUATION, Set.of(nodeId.value()), Instant.now()));
 
         loop.start("t1", graph);
         await().atMost(AWAIT).until(() ->
@@ -144,7 +144,7 @@ class ReconciliationLoopCbrOutcomeTest {
         testExecutor.failNodes.add(nodeId);
 
         cbrTracker.recordProposal("t1", new CbrProposal(
-            "case-fail", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "case-fail", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         loop.start("t1", graph);
         await().atMost(AWAIT).until(() ->
@@ -165,7 +165,7 @@ class ReconciliationLoopCbrOutcomeTest {
         actualAdapter.setStatuses(Map.of(nodeId, NodeStatus.PRESENT));
 
         cbrTracker.recordProposal("t1", new CbrProposal(
-            "case-once", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "case-once", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         loop.start("t1", graph);
         await().atMost(AWAIT).until(() ->
@@ -195,7 +195,7 @@ class ReconciliationLoopCbrOutcomeTest {
         actualAdapter.setStatuses(Map.of(nodeId, NodeStatus.PRESENT));
 
         cbrTracker.recordProposal("t1", new CbrProposal(
-            "case-abandoned", CbrPath.FAULT, Set.of(nodeId), Instant.now()));
+            "case-abandoned", CbrPath.FAULT, Set.of(nodeId.value()), Instant.now()));
 
         loop.start("t1", graph);
         loop.stop("t1");

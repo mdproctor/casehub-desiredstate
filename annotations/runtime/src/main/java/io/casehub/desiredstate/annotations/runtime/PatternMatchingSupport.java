@@ -1,11 +1,5 @@
 package io.casehub.desiredstate.annotations.runtime;
 
-import io.casehub.desiredstate.api.DesiredNode;
-import io.casehub.desiredstate.api.DesiredStateGraph;
-import io.casehub.desiredstate.api.NodeId;
-import io.casehub.desiredstate.api.NodeType;
-
-import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -17,50 +11,49 @@ public final class PatternMatchingSupport {
 
     private PatternMatchingSupport() {}
 
-    public static DesiredNode resolveReference(PatternParameterDescriptor p, int paramIndex,
-            String[] paramNames, Map<String, DesiredNode> bindings) {
+    public static <N> N resolveReference(PatternParameterDescriptor p, int paramIndex,
+                                         String[] paramNames, Map<String, N> bindings) {
         if (!p.of().isEmpty()) {
             return bindings.get(p.of());
         }
         for (int i = paramIndex - 1; i >= 0; i--) {
-            DesiredNode prev = bindings.get(paramNames[i]);
-            if (prev != null) return prev;
+            N prev = bindings.get(paramNames[i]);
+            if (prev != null) {return prev;}
         }
         return null;
     }
 
-    public static List<DesiredNode> findDirectNeighbors(DesiredStateGraph graph,
-                                                        DesiredNode refNode, PatternParameterDescriptor p) {
-        boolean  wildcard   = "*".equals(p.nodeType());
-        NodeType targetType = wildcard ? null : NodeType.of(p.nodeType());
-        Set<NodeId> neighbors = p.direction() == Direction.DEPENDENCIES
-                                ? graph.dependenciesOf(refNode.id())
-                                : graph.dependentsOf(refNode.id());
+    public static <N> List<N> findDirectNeighbors(io.casehub.desiredstate.annotations.runtime.graph.GraphView<N> view,
+                                                  N refNode, PatternParameterDescriptor p) {
+        boolean wildcard = "*".equals(p.nodeType());
+        Set<String> neighbors = p.direction() == Direction.DEPENDENCIES
+                                ? view.dependenciesOf(view.nodeId(refNode))
+                                : view.dependentsOf(view.nodeId(refNode));
         return neighbors.stream()
-                        .map(id -> graph.nodes().get(id))
-                        .filter(n -> n != null && (wildcard || n.type().equals(targetType)))
+                        .map(view::node)
+                        .filter(n -> n != null && (wildcard || view.nodeType(n).equals(p.nodeType())))
                         .toList();
     }
 
-    public static List<DesiredNode> findReachable(DesiredStateGraph graph,
-                                                  DesiredNode refNode, PatternParameterDescriptor p) {
-        boolean            wildcard   = "*".equals(p.nodeType());
-        NodeType           targetType = wildcard ? null : NodeType.of(p.nodeType());
-        List<DesiredNode>  found      = new ArrayList<>();
-        Set<NodeId>        visited    = new HashSet<>();
-        ArrayDeque<NodeId> queue      = new ArrayDeque<>();
-        queue.add(refNode.id());
-        visited.add(refNode.id());
+    public static <N> List<N> findReachable(io.casehub.desiredstate.annotations.runtime.graph.GraphView<N> view,
+                                            N refNode, PatternParameterDescriptor p) {
+        boolean            wildcard = "*".equals(p.nodeType());
+        List<N>            found    = new ArrayList<>();
+        Set<String>        visited  = new HashSet<>();
+        ArrayDeque<String> queue    = new ArrayDeque<>();
+        String             startId  = view.nodeId(refNode);
+        queue.add(startId);
+        visited.add(startId);
 
         while (!queue.isEmpty()) {
-            NodeId current = queue.poll();
-            Set<NodeId> neighbors = p.direction() == Direction.DEPENDENCIES
-                                    ? graph.dependenciesOf(current)
-                                    : graph.dependentsOf(current);
-            for (NodeId neighbor : neighbors) {
+            String current = queue.poll();
+            Set<String> neighbors = p.direction() == Direction.DEPENDENCIES
+                                    ? view.dependenciesOf(current)
+                                    : view.dependentsOf(current);
+            for (String neighbor : neighbors) {
                 if (visited.add(neighbor)) {
-                    DesiredNode node = graph.nodes().get(neighbor);
-                    if (node != null && (wildcard || node.type().equals(targetType))) {
+                    N node = view.node(neighbor);
+                    if (node != null && (wildcard || view.nodeType(node).equals(p.nodeType()))) {
                         found.add(node);
                     }
                     queue.add(neighbor);
@@ -70,43 +63,43 @@ public final class PatternMatchingSupport {
         return found;
     }
 
-    public static boolean existsGlobal(DesiredStateGraph graph, PatternParameterDescriptor p) {
-        if ("*".equals(p.nodeType())) {
-            return !graph.nodes().isEmpty();
-        }
-        NodeType targetType = NodeType.of(p.nodeType());
-        return graph.nodes().values().stream().anyMatch(n -> n.type().equals(targetType));
-    }
-
-    public static boolean existsRelational(DesiredStateGraph graph, DesiredNode refNode,
+    public static <N> boolean existsGlobal(io.casehub.desiredstate.annotations.runtime.graph.GraphView<N> view,
                                            PatternParameterDescriptor p) {
-        boolean  wildcard   = "*".equals(p.nodeType());
-        NodeType targetType = wildcard ? null : NodeType.of(p.nodeType());
-        Set<NodeId> neighbors = p.direction() == Direction.DEPENDENCIES
-                                ? graph.dependenciesOf(refNode.id())
-                                : graph.dependentsOf(refNode.id());
-        return neighbors.stream()
-                        .map(id -> graph.nodes().get(id))
-                        .anyMatch(n -> n != null && (wildcard || n.type().equals(targetType)));
+        if ("*".equals(p.nodeType())) {
+            return !view.nodes().isEmpty();
+        }
+        return view.nodes().values().stream()
+                   .anyMatch(n -> view.nodeType(n).equals(p.nodeType()));
     }
 
-    public static String[] getParameterNames(Method method) {
-        var params = method.getParameters();
-        String[] names = new String[params.length];
+    public static <N> boolean existsRelational(io.casehub.desiredstate.annotations.runtime.graph.GraphView<N> view,
+                                               N refNode, PatternParameterDescriptor p) {
+        boolean wildcard = "*".equals(p.nodeType());
+        Set<String> neighbors = p.direction() == Direction.DEPENDENCIES
+                                ? view.dependenciesOf(view.nodeId(refNode))
+                                : view.dependentsOf(view.nodeId(refNode));
+        return neighbors.stream()
+                        .map(view::node)
+                        .anyMatch(n -> n != null && (wildcard || view.nodeType(n).equals(p.nodeType())));
+    }
+
+    public static String[] getParameterNames(java.lang.reflect.Method method) {
+        var      params = method.getParameters();
+        String[] names  = new String[params.length];
         for (int i = 0; i < params.length; i++) {
             names[i] = params[i].getName();
         }
         return names;
     }
 
-    public static List<List<DesiredNode>> crossProduct(List<List<DesiredNode>> sets) {
-        List<List<DesiredNode>> result = new ArrayList<>();
+    public static <N> List<List<N>> crossProduct(List<List<N>> sets) {
+        List<List<N>> result = new ArrayList<>();
         result.add(List.of());
-        for (List<DesiredNode> set : sets) {
-            List<List<DesiredNode>> newResult = new ArrayList<>();
-            for (List<DesiredNode> existing : result) {
-                for (DesiredNode item : set) {
-                    List<DesiredNode> combined = new ArrayList<>(existing);
+        for (List<N> set : sets) {
+            List<List<N>> newResult = new ArrayList<>();
+            for (List<N> existing : result) {
+                for (N item : set) {
+                    List<N> combined = new ArrayList<>(existing);
                     combined.add(item);
                     newResult.add(combined);
                 }

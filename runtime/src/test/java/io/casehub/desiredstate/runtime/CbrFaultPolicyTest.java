@@ -57,7 +57,7 @@ class CbrFaultPolicyTest {
     void noCandidates_shouldReturnEmptyMutations() {
         retriever.setResults(List.of());
 
-        List<GraphMutation> mutations = policy.onFault("tenant-1",
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -74,7 +74,7 @@ class CbrFaultPolicyTest {
             new RetrievedConfiguration(adapted, 0.3, "case-1", Map.of())));
         adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.9, "case-1"));
 
-        List<GraphMutation> mutations = policy.onFault("tenant-1",
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -91,7 +91,7 @@ class CbrFaultPolicyTest {
             new RetrievedConfiguration(adapted, 0.8, "case-1", Map.of())));
         adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.4, "case-1"));
 
-        List<GraphMutation> mutations = policy.onFault("tenant-1",
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -108,7 +108,7 @@ class CbrFaultPolicyTest {
             new RetrievedConfiguration(adapted, 0.9, "case-1", Map.of())));
         adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.8, "case-1"));
 
-        List<GraphMutation> mutations = policy.onFault("tenant-1",
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -124,7 +124,7 @@ class CbrFaultPolicyTest {
             new RetrievedConfiguration(adapted, 0.9, "case-1", Map.of())));
         // adapter default is null → returns Optional.empty()
 
-        List<GraphMutation> mutations = policy.onFault("tenant-1",
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
@@ -145,13 +145,13 @@ class CbrFaultPolicyTest {
         adapter.setResultForSource("case-low", new AdaptedConfiguration(low, 0.65, "case-low"));
         adapter.setResultForSource("case-high", new AdaptedConfiguration(high, 0.95, "case-high"));
 
-        List<GraphMutation> mutations = policy.onFault("tenant-1",
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "timeout"),
             ImmutableDesiredStateGraph.empty(),
             new ActualState(Map.of()));
 
         assertThat(mutations).hasSize(1);
-        GraphMutation.AddNode add = (GraphMutation.AddNode) mutations.get(0);
+        var add = (GraphMutation.AddNode<DesiredNode>) mutations.get(0);
         assertThat(add.node().id()).isEqualTo(NodeId.of("high"));
     }
 
@@ -165,7 +165,7 @@ class CbrFaultPolicyTest {
         adapter.setDefaultResult(new AdaptedConfiguration(adapted, 0.8, "case-1"));
 
         // Default threshold 0.5 → 0.3 below → filtered
-        List<GraphMutation> mutations1 = policy.onFault("tenant-1",
+        List<GraphMutation<DesiredNode>> mutations1 = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "x"),
             ImmutableDesiredStateGraph.empty(), new ActualState(Map.of()));
         assertThat(mutations1).isEmpty();
@@ -175,7 +175,7 @@ class CbrFaultPolicyTest {
             DesiredStatePreferenceKeys.CBR_MIN_RETRIEVAL_CONFIDENCE.qualifiedName(), "0.2"));
         policy = new CbrFaultPolicy(retriever, adapter, prefProvider, tracker);
 
-        List<GraphMutation> mutations2 = policy.onFault("tenant-1",
+        List<GraphMutation<DesiredNode>> mutations2 = policy.onFault("tenant-1",
             new FaultEvent(NodeId.of("n1"), FaultType.PROVISION_FAILED, "x"),
             ImmutableDesiredStateGraph.empty(), new ActualState(Map.of()));
         assertThat(mutations2).hasSize(1);

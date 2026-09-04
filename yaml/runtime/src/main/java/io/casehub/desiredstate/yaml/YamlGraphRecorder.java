@@ -205,8 +205,12 @@ public class YamlGraphRecorder {
                         .GraphDescriptorResolver.resolveRules(crossSurfaceRuleDescriptors));
             }
             if (!allResolvedRules.isEmpty()) {
-                graph = new io.casehub.desiredstate.annotations.runtime.GraphRuleEngine()
-                        .evaluate(graph, allResolvedRules);
+                var ruleAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+                var ruleView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, ruleAdapter);
+                @SuppressWarnings({"rawtypes", "unchecked"})
+                var evaluated = new io.casehub.desiredstate.annotations.runtime.GraphRuleEngine()
+                        .evaluate(ruleView, (java.util.List) allResolvedRules);
+                graph = ((io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView) evaluated).graph();
             }
 
             List<ResolvedInvariant> effectiveInvariants = new ArrayList<>(invariants);
@@ -221,7 +225,11 @@ public class YamlGraphRecorder {
             }
 
             if (!effectiveInvariants.isEmpty()) {
-                new GraphInvariantEngine().validate(graph, effectiveInvariants);
+                var invAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+                var invView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, invAdapter);
+                @SuppressWarnings({"rawtypes", "unchecked"})
+                java.util.List typedInvariants = effectiveInvariants;
+                new GraphInvariantEngine().validate(invView, typedInvariants);
             }
 
             return CompilationResult.single(graph);
@@ -381,13 +389,21 @@ public class YamlGraphRecorder {
                         resolvedRules.add(YamlRuleConverter.toDeclarativeRule(
                                 ruleEntry.getKey(), ruleEntry.getValue(), resolver, registry));
                     }
-                    phaseGraph = new io.casehub.desiredstate.annotations.runtime.GraphRuleEngine()
-                                         .evaluate(phaseGraph, resolvedRules);
+                    var phRuleAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+                    var phRuleView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(phaseGraph, phRuleAdapter);
+                    @SuppressWarnings({"rawtypes", "unchecked"})
+                    var phEvaluated = new io.casehub.desiredstate.annotations.runtime.GraphRuleEngine()
+                                             .evaluate(phRuleView, (java.util.List) resolvedRules);
+                    phaseGraph = ((io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView) phEvaluated).graph();
                 }
 
                 if (!invariants.isEmpty()) {
+                    var phInvAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+                    var phInvView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(phaseGraph, phInvAdapter);
+                    @SuppressWarnings({"rawtypes", "unchecked"})
+                    java.util.List phTypedInvariants = invariants;
                     new io.casehub.desiredstate.annotations.runtime.GraphInvariantEngine()
-                            .validate(phaseGraph, invariants);
+                            .validate(phInvView, phTypedInvariants);
                 }
 
                 io.casehub.desiredstate.api.CompletionCondition cc =
