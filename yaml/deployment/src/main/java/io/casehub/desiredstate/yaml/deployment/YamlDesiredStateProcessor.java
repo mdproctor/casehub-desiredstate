@@ -9,7 +9,6 @@ import io.casehub.desiredstate.annotations.runtime.GraphDescriptor;
 import io.casehub.desiredstate.annotations.runtime.NodeDescriptor;
 import io.casehub.desiredstate.api.GoalCompiler;
 import io.casehub.desiredstate.api.NodeSpec;
-import io.casehub.desiredstate.api.NodeSpecFactoryProvider;
 import io.casehub.desiredstate.api.NodeTypeId;
 import io.casehub.desiredstate.yaml.YamlGraphRecorder;
 import io.casehub.desiredstate.yaml.model.YamlGraph;
@@ -47,7 +46,6 @@ public class YamlDesiredStateProcessor {
     private static final String YAML_PATH_PREFIX = "META-INF/desiredstate/";
     private static final DotName NODE_SPEC = DotName.createSimple(NodeSpec.class.getName());
     private static final DotName NODE_TYPE_ID = DotName.createSimple(NodeTypeId.class.getName());
-    private static final DotName FACTORY_PROVIDER = DotName.createSimple(NodeSpecFactoryProvider.class.getName());
 
     @BuildStep
     @Record(ExecutionTime.RUNTIME_INIT)
@@ -59,7 +57,6 @@ public class YamlDesiredStateProcessor {
 
         IndexView index = indexBuildItem.getIndex();
         Map<String, String> typeRegistry = scanNodeTypes(index);
-        List<String> factoryProviders = scanFactoryProviders(index);
 
         if (typeRegistry.isEmpty()) {
             LOG.debug("No @NodeTypeId annotations found — skipping YAML graph discovery");
@@ -68,7 +65,7 @@ public class YamlDesiredStateProcessor {
 
         ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
         List<NamedYamlGraph> yamlGraphs = discoverYamlFiles(yamlMapper);
-        Map<String, io.casehub.desiredstate.yaml.model.YamlModule> availableModules =
+        Map<String, io.casehub.yaml.core.module.YamlModule> availableModules =
                 discoverModules(yamlMapper);
 
         if (yamlGraphs.isEmpty()) {
@@ -89,10 +86,6 @@ public class YamlDesiredStateProcessor {
             @SuppressWarnings("rawtypes")
             RuntimeValue<GoalCompiler> compiler;
 
-            if (!yamlGraph.imports().isEmpty()) {
-                validateImports(yamlGraph.imports(), availableModules, typeRegistry, fileName);
-            }
-
             List<io.casehub.desiredstate.annotations.runtime.GraphRuleDescriptor> crossSurfaceRules = List.of();
             List<io.casehub.desiredstate.annotations.runtime.GraphInvariantDescriptor> crossSurfaceInvariants = List.of();
             for (var additional : additionalRuleItems) {
@@ -108,7 +101,7 @@ public class YamlDesiredStateProcessor {
                 compiler = recorder.createYamlLifecycleGoalCompiler(
                         yamlGraph, typeRegistry,
                         yamlGraph.variables() != null ? yamlGraph.variables() : Map.of(),
-                        invariants, availableModules, factoryProviders);
+                        invariants);
             } else {
                 validateYamlGraph(yamlGraph, typeRegistry, fileName);
                 GraphDescriptor descriptor = toGraphDescriptor(yamlGraph, typeRegistry);
@@ -116,8 +109,7 @@ public class YamlDesiredStateProcessor {
                         descriptor, typeRegistry,
                         yamlGraph.variables() != null ? yamlGraph.variables() : Map.of(),
                         invariants, yamlGraph, availableModules,
-                        crossSurfaceRules, crossSurfaceInvariants,
-                        factoryProviders);
+                        crossSurfaceRules, crossSurfaceInvariants);
             }
 
             syntheticBeans.produce(SyntheticBeanBuildItem.configure(GoalCompiler.class)
@@ -185,32 +177,23 @@ public class YamlDesiredStateProcessor {
         }
     }
 
-    static Map<String, String> scanNodeTypes(IndexView index) {
+    private Map<String, String> scanNodeTypes(IndexView index) {
         Map<String, String> registry = new HashMap<>();
         for (AnnotationInstance ann : index.getAnnotations(NODE_TYPE_ID)) {
             if (ann.target().kind() == org.jboss.jandex.AnnotationTarget.Kind.CLASS) {
-                ClassInfo cls      = ann.target().asClass();
-                String    typeId   = ann.value().asString();
-                String    existing = registry.put(typeId, cls.name().toString());
-                if (existing != null) {
-                    throw new RuntimeException("NodeType '" + typeId
-                                               + "' claimed by both " + existing + " and " + cls.name());
+                ClassInfo cls = ann.target().asClass();
+                if (index.getAllKnownImplementors(NODE_SPEC).contains(cls)) {
+                    String typeId = ann.value().asString();
+                    String existing = registry.put(typeId, cls.name().toString());
+                    if (existing != null) {
+                        throw new RuntimeException("NodeType '" + typeId
+                                + "' claimed by both " + existing + " and " + cls.name());
+                    }
                 }
             }
         }
         return registry;
     }
-
-    static List<String> scanFactoryProviders(IndexView index) {
-        List<String> providers = new ArrayList<>();
-        for (ClassInfo cls : index.getAllKnownImplementors(FACTORY_PROVIDER)) {
-            if (!java.lang.reflect.Modifier.isAbstract(cls.flags())) {
-                providers.add(cls.name().toString());
-            }
-        }
-        return providers;
-    }
-
 
     private List<NamedYamlGraph> discoverYamlFiles(ObjectMapper mapper) throws IOException, java.net.URISyntaxException {
         List<NamedYamlGraph> graphs = new ArrayList<>();
@@ -262,82 +245,40 @@ public class YamlDesiredStateProcessor {
         return graphs;
     }
 
-    static Map<String, io.casehub.desiredstate.yaml.model.YamlModule> discoverModules(
+    private Map<String, io.casehub.yaml.core.module.YamlModule> discoverModules(
             ObjectMapper mapper) throws IOException, java.net.URISyntaxException {
-        Map<String, io.casehub.desiredstate.yaml.model.YamlModule> modules   = new HashMap<>();
-        String                                                     prefix    = "META-INF/desiredstate/modules/";
-        ClassLoader                                                cl        = Thread.currentThread().getContextClassLoader();
-        java.util.Enumeration<java.net.URL>                        resources = cl.getResources(prefix);
+        ObjectMapper moduleMapper = mapper.copy();
+        moduleMapper.registerModule(new io.casehub.yaml.jackson.YamlCoreJacksonModule());
 
+        String prefix = "META-INF/desiredstate/modules/";
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        java.util.Enumeration<java.net.URL> resources = cl.getResources(prefix);
+
+        List<io.casehub.yaml.core.module.YamlModuleFile> moduleFiles = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         while (resources.hasMoreElements()) {
             java.net.URL dirUrl = resources.nextElement();
             if ("file".equals(dirUrl.getProtocol())) {
-                discoverFileModules(dirUrl, mapper, modules, seen);
-            } else if ("jar".equals(dirUrl.getProtocol())) {
-                discoverJarModules(dirUrl, prefix, mapper, modules, seen);
-            }
-        }
-        return modules;
-    }
-
-    private static void discoverFileModules(
-            java.net.URL dirUrl, ObjectMapper mapper,
-            Map<String, io.casehub.desiredstate.yaml.model.YamlModule> modules,
-            Set<String> seen) throws IOException, java.net.URISyntaxException {
-        java.io.File dir = new java.io.File(dirUrl.toURI().getPath());
-        if (dir.isDirectory()) {
-            java.io.File[] yamlFiles = dir.listFiles((d, name) ->
-                                                             name.endsWith(".yaml") || name.endsWith(".yml"));
-            if (yamlFiles != null) {
-                for (java.io.File f : yamlFiles) {
-                    if (seen.add(f.getName())) {
-                        try (InputStream is = f.toURI().toURL().openStream()) {
-                            loadModule(is, f.getName(), mapper, modules);
+                java.io.File dir = new java.io.File(dirUrl.toURI().getPath());
+                if (dir.isDirectory()) {
+                    java.io.File[] yamlFiles = dir.listFiles((d, name) ->
+                            name.endsWith(".yaml") || name.endsWith(".yml"));
+                    if (yamlFiles != null) {
+                        for (java.io.File f : yamlFiles) {
+                            if (seen.add(f.getName())) {
+                                try (InputStream is = f.toURI().toURL().openStream()) {
+                                    io.casehub.yaml.core.module.YamlModuleFile moduleFile =
+                                            moduleMapper.readValue(is,
+                                                    io.casehub.yaml.core.module.YamlModuleFile.class);
+                                    moduleFiles.add(moduleFile);
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-    }
-
-    static void discoverJarModules(
-            java.net.URL jarUrl, String prefix, ObjectMapper mapper,
-            Map<String, io.casehub.desiredstate.yaml.model.YamlModule> modules,
-            Set<String> seen) throws IOException {
-        String urlStr   = jarUrl.toString();
-        int    bangIdx  = urlStr.indexOf("!/");
-        String filePath = urlStr.substring("jar:file:".length(), bangIdx);
-        try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(filePath)) {
-            java.util.Enumeration<java.util.jar.JarEntry> entries = jarFile.entries();
-            while (entries.hasMoreElements()) {
-                java.util.jar.JarEntry entry     = entries.nextElement();
-                String                 entryName = entry.getName();
-                if (entryName.startsWith(prefix) && !entry.isDirectory()
-                    && (entryName.endsWith(".yaml") || entryName.endsWith(".yml"))) {
-                    String fileName = entryName.substring(prefix.length());
-                    if (!fileName.contains("/") && seen.add(fileName)) {
-                        try (InputStream is = jarFile.getInputStream(entry)) {
-                            loadModule(is, fileName, mapper, modules);
-                        }
-                    }
-                }
-            }
-        }}
-
-    private static void loadModule(
-            InputStream is, String fileName, ObjectMapper mapper,
-            Map<String, io.casehub.desiredstate.yaml.model.YamlModule> modules) throws IOException {
-        io.casehub.desiredstate.yaml.model.YamlModuleFile moduleFile =
-                mapper.readValue(is, io.casehub.desiredstate.yaml.model.YamlModuleFile.class);
-        if (moduleFile.hasNestedImports()) {
-            throw new RuntimeException("Module '" + moduleFile.module().name()
-                                       + "' in " + fileName
-                                       + " contains imports — module nesting exceeds the "
-                                       + "2-level cap (D10). Modules cannot import other modules.");
-        }
-        io.casehub.desiredstate.yaml.model.YamlModule module = moduleFile.toModule();
-        modules.put(module.name(), module);
+        return io.casehub.yaml.core.module.ModuleExpander.resolveExtensions(moduleFiles);
     }
 
     private void validateYamlGraph(YamlGraph graph, Map<String, String> typeRegistry, String fileName) {
@@ -670,7 +611,12 @@ public class YamlDesiredStateProcessor {
                                        + "When lifecycle is present, nodes live inside phases.");
         }
 
-        
+        if (!graph.imports().isEmpty()) {
+            throw new RuntimeException(fileName
+                                       + ": module imports are not yet supported with lifecycle phases. "
+                                       + "Use module imports with single-graph mode, "
+                                       + "or inline the module nodes into the appropriate phase.");
+        }
 
         List<io.casehub.desiredstate.yaml.model.YamlPhase> phases = graph.lifecycle().phases();
         if (phases.isEmpty()) {
@@ -735,48 +681,8 @@ public class YamlDesiredStateProcessor {
     }
 
 
-    static void validateImports(List<io.casehub.desiredstate.yaml.model.YamlImport> imports,
-                               Map<String, io.casehub.desiredstate.yaml.model.YamlModule> modules,
-                               Map<String, String> typeRegistry, String fileName) {
-        Set<String> aliases = new HashSet<>();
-
-        for (int i = 0; i < imports.size(); i++) {
-            var imp = imports.get(i);
-            String ctx = fileName + ": imports[" + i + "]";
-
-            if (!modules.containsKey(imp.module())) {
-                throw new RuntimeException(ctx + ": unknown module '" + imp.module()
-                        + "'. Available: " + modules.keySet());
-            }
-
-            if (imp.as() == null || imp.as().isBlank()) {
-                throw new RuntimeException(ctx + ": 'as' alias is required");
-            }
-
-            if (imp.as().contains(".")) {
-                throw new RuntimeException(ctx + ": alias '" + imp.as()
-                        + "' contains the reserved '.' separator");
-            }
-
-            if (!aliases.add(imp.as())) {
-                throw new RuntimeException(ctx + ": duplicate alias '" + imp.as() + "'");
-            }
-
-            var module = modules.get(imp.module());
-            for (Map.Entry<String, io.casehub.desiredstate.yaml.model.YamlModuleParameter> param :
-                    module.parameters().entrySet()) {
-                if (param.getValue().required()
-                        && !imp.parameters().containsKey(param.getKey())) {
-                    throw new RuntimeException(ctx + ": required parameter '"
-                            + param.getKey() + "' is missing for module '"
-                            + imp.module() + "'");
-                }
-            }
-        }
-    }
-
     static void validateForEach(Map<String, YamlNode> nodes,
-                               Map<String, io.casehub.desiredstate.yaml.model.YamlIterationGroup> iterations,
+                               Map<String, io.casehub.yaml.core.foreach.IterationGroup> iterations,
                                Map<String, String> typeRegistry, String fileName) {
         for (String nodeId : nodes.keySet()) {
             if (nodeId.contains(".")) {
@@ -811,7 +717,7 @@ public class YamlDesiredStateProcessor {
             }
         }
 
-        for (Map.Entry<String, io.casehub.desiredstate.yaml.model.YamlIterationGroup> entry :
+        for (Map.Entry<String, io.casehub.yaml.core.foreach.IterationGroup> entry :
                 iterations.entrySet()) {
             for (Object val : entry.getValue().inAsList()) {
                 if (val instanceof String s && s.contains(".") && !s.contains("${")) {

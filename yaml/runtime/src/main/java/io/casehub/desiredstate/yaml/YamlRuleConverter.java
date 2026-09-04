@@ -17,7 +17,7 @@ import io.casehub.desiredstate.api.NodeSpec;
 import io.casehub.desiredstate.yaml.model.YamlPattern;
 import io.casehub.desiredstate.yaml.model.YamlRule;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
-import io.casehub.desiredstate.yaml.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableResolver;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -84,7 +84,8 @@ public final class YamlRuleConverter {
                     Map<String, Object> specMap = params.containsKey("spec")
                             ? resolveMatchInMap((Map<String, Object>) params.get("spec"), bindings)
                             : Map.of();
-                    NodeSpec spec = registry.resolve(type).create(specMap);
+                    Class<? extends NodeSpec> specClass = registry.resolve(type);
+                    NodeSpec spec = mapper.convertValue(specMap, specClass);
                     HumanGating gating = params.containsKey("humanGating")
                             ? HumanGating.valueOf((String) params.get("humanGating"))
                             : HumanGating.NONE;
@@ -104,7 +105,8 @@ public final class YamlRuleConverter {
                     Map<String, Object> specMap = params.containsKey("spec")
                             ? resolveMatchInMap((Map<String, Object>) params.get("spec"), bindings)
                             : Map.of();
-                    NodeSpec spec = registry.resolve(type).create(specMap);
+                    Class<? extends NodeSpec> specClass = registry.resolve(type);
+                    NodeSpec spec = mapper.convertValue(specMap, specClass);
                     HumanGating gating = params.containsKey("humanGating")
                             ? HumanGating.valueOf((String) params.get("humanGating"))
                             : HumanGating.NONE;
@@ -175,7 +177,7 @@ public final class YamlRuleConverter {
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             Object val = entry.getValue();
             if (val instanceof String s && s.contains("${var.")) {
-                result.put(entry.getKey(), resolver.resolveTemplateString(s, context));
+                result.put(entry.getKey(), resolver.resolveString(s, context));
             } else if (val instanceof Map<?, ?> nested) {
                 result.put(entry.getKey(),
                         resolveVarInActionParams((Map<String, Object>) nested, resolver, context));

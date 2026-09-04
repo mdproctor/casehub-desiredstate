@@ -93,7 +93,7 @@ class YamlForEachDeserializationTest {
                       uri: "s3://${each.region}/data.csv"
                 """;
         YamlGraph graph = mapper.readValue(yaml, YamlGraph.class);
-        YamlIterationGroup group = graph.iterations().get("regional");
+        io.casehub.yaml.core.foreach.IterationGroup group = graph.iterations().get("regional");
         assertThat(group.in()).isEqualTo("${var.regions}");
     }
 

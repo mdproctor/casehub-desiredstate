@@ -13,19 +13,12 @@ public record YamlNode(
         String when,
         Object forEach,
         YamlHooks provision,
-        YamlHooks deprovision,
-        String backendId) {
+        YamlHooks deprovision) {
 
     public YamlNode {
         if (spec == null) {spec = Map.of();}
         if (dependsOn == null) {dependsOn = List.of();}
         if (humanGating == null) {humanGating = HumanGating.NONE;}
-    }
-
-    public YamlNode(String type, Map<String, Object> spec, List<Object> dependsOn,
-                    HumanGating humanGating, String when, Object forEach,
-                    YamlHooks provision, YamlHooks deprovision) {
-        this(type, spec, dependsOn, humanGating, when, forEach, provision, deprovision, null);
     }
 
     @SuppressWarnings("unchecked")
