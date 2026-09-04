@@ -76,14 +76,15 @@ class PipelineYamlTest {
             }
 
             // Load monitoring module
-            Map<String, io.casehub.desiredstate.yaml.model.YamlModule> availableModules =
+            yamlMapper.registerModule(new io.casehub.yaml.jackson.YamlCoreJacksonModule());
+            Map<String, io.casehub.yaml.core.module.YamlModule> availableModules =
                     new java.util.HashMap<>();
             try (InputStream modIs = PipelineYamlTest.class.getClassLoader()
                     .getResourceAsStream("META-INF/desiredstate/modules/monitoring.yaml")) {
                 if (modIs != null) {
-                    io.casehub.desiredstate.yaml.model.YamlModuleFile moduleFile =
-                            yamlMapper.readValue(modIs, io.casehub.desiredstate.yaml.model.YamlModuleFile.class);
-                    io.casehub.desiredstate.yaml.model.YamlModule module = moduleFile.toModule();
+                    io.casehub.yaml.core.module.YamlModuleFile moduleFile =
+                            yamlMapper.readValue(modIs, io.casehub.yaml.core.module.YamlModuleFile.class);
+                    io.casehub.yaml.core.module.YamlModule module = moduleFile.toModule();
                     availableModules.put(module.name(), module);
                 }
             }

@@ -216,6 +216,6 @@ Protocols live in `casehub/garden`. Do not write protocol files in this repo.
 
 ## Workspace
 
-**Project repo:** `/Users/mdproctor/claude/casehub/desiredstate`
-**Workspace:** `/Users/mdproctor/claude/public/casehub-desiredstate`
+**Project repo:** `proj/`
+**Workspace:** `wksp/`
 **Workspace type:** public

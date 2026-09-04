@@ -65,7 +65,7 @@ public class YamlDesiredStateProcessor {
 
         ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
         List<NamedYamlGraph> yamlGraphs = discoverYamlFiles(yamlMapper);
-        Map<String, io.casehub.desiredstate.yaml.model.YamlModule> availableModules =
+        Map<String, io.casehub.yaml.core.module.YamlModule> availableModules =
                 discoverModules(yamlMapper);
 
         if (yamlGraphs.isEmpty()) {
@@ -85,10 +85,6 @@ public class YamlDesiredStateProcessor {
 
             @SuppressWarnings("rawtypes")
             RuntimeValue<GoalCompiler> compiler;
-
-            if (!yamlGraph.imports().isEmpty()) {
-                validateImports(yamlGraph.imports(), availableModules, typeRegistry, fileName);
-            }
 
             List<io.casehub.desiredstate.annotations.runtime.GraphRuleDescriptor> crossSurfaceRules = List.of();
             List<io.casehub.desiredstate.annotations.runtime.GraphInvariantDescriptor> crossSurfaceInvariants = List.of();
@@ -249,13 +245,16 @@ public class YamlDesiredStateProcessor {
         return graphs;
     }
 
-    private Map<String, io.casehub.desiredstate.yaml.model.YamlModule> discoverModules(
+    private Map<String, io.casehub.yaml.core.module.YamlModule> discoverModules(
             ObjectMapper mapper) throws IOException, java.net.URISyntaxException {
-        Map<String, io.casehub.desiredstate.yaml.model.YamlModule> modules = new HashMap<>();
+        ObjectMapper moduleMapper = mapper.copy();
+        moduleMapper.registerModule(new io.casehub.yaml.jackson.YamlCoreJacksonModule());
+
         String prefix = "META-INF/desiredstate/modules/";
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         java.util.Enumeration<java.net.URL> resources = cl.getResources(prefix);
 
+        List<io.casehub.yaml.core.module.YamlModuleFile> moduleFiles = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         while (resources.hasMoreElements()) {
             java.net.URL dirUrl = resources.nextElement();
@@ -268,18 +267,10 @@ public class YamlDesiredStateProcessor {
                         for (java.io.File f : yamlFiles) {
                             if (seen.add(f.getName())) {
                                 try (InputStream is = f.toURI().toURL().openStream()) {
-                                    io.casehub.desiredstate.yaml.model.YamlModuleFile moduleFile =
-                                            mapper.readValue(is,
-                                                    io.casehub.desiredstate.yaml.model.YamlModuleFile.class);
-                                    if (moduleFile.hasNestedImports()) {
-                                        throw new RuntimeException("Module '" + moduleFile.module().name()
-                                                + "' in " + f.getName()
-                                                + " contains imports — module nesting exceeds the "
-                                                + "2-level cap (D10). Modules cannot import other modules.");
-                                    }
-                                    io.casehub.desiredstate.yaml.model.YamlModule module =
-                                            moduleFile.toModule();
-                                    modules.put(module.name(), module);
+                                    io.casehub.yaml.core.module.YamlModuleFile moduleFile =
+                                            moduleMapper.readValue(is,
+                                                    io.casehub.yaml.core.module.YamlModuleFile.class);
+                                    moduleFiles.add(moduleFile);
                                 }
                             }
                         }
@@ -287,7 +278,7 @@ public class YamlDesiredStateProcessor {
                 }
             }
         }
-        return modules;
+        return io.casehub.yaml.core.module.ModuleExpander.resolveExtensions(moduleFiles);
     }
 
     private void validateYamlGraph(YamlGraph graph, Map<String, String> typeRegistry, String fileName) {
@@ -689,46 +680,6 @@ public class YamlDesiredStateProcessor {
         }
     }
 
-
-    static void validateImports(List<io.casehub.desiredstate.yaml.model.YamlImport> imports,
-                               Map<String, io.casehub.desiredstate.yaml.model.YamlModule> modules,
-                               Map<String, String> typeRegistry, String fileName) {
-        Set<String> aliases = new HashSet<>();
-
-        for (int i = 0; i < imports.size(); i++) {
-            var imp = imports.get(i);
-            String ctx = fileName + ": imports[" + i + "]";
-
-            if (!modules.containsKey(imp.module())) {
-                throw new RuntimeException(ctx + ": unknown module '" + imp.module()
-                        + "'. Available: " + modules.keySet());
-            }
-
-            if (imp.as() == null || imp.as().isBlank()) {
-                throw new RuntimeException(ctx + ": 'as' alias is required");
-            }
-
-            if (imp.as().contains(".")) {
-                throw new RuntimeException(ctx + ": alias '" + imp.as()
-                        + "' contains the reserved '.' separator");
-            }
-
-            if (!aliases.add(imp.as())) {
-                throw new RuntimeException(ctx + ": duplicate alias '" + imp.as() + "'");
-            }
-
-            var module = modules.get(imp.module());
-            for (Map.Entry<String, io.casehub.desiredstate.yaml.model.YamlModuleParameter> param :
-                    module.parameters().entrySet()) {
-                if (param.getValue().required()
-                        && !imp.parameters().containsKey(param.getKey())) {
-                    throw new RuntimeException(ctx + ": required parameter '"
-                            + param.getKey() + "' is missing for module '"
-                            + imp.module() + "'");
-                }
-            }
-        }
-    }
 
     static void validateForEach(Map<String, YamlNode> nodes,
                                Map<String, io.casehub.yaml.core.foreach.IterationGroup> iterations,
