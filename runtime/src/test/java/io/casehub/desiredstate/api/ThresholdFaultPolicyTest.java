@@ -70,7 +70,7 @@ class ThresholdFaultPolicyTest {
 
         assertThat(mutations).hasSize(2);
         assertThat(mutations.getFirst()).isInstanceOf(GraphMutation.AddNode.class);
-        var addNode = (GraphMutation.AddNode) mutations.getFirst();
+        var addNode = (GraphMutation.AddNode<DesiredNode>) mutations.getFirst();
         assertThat(addNode.node().id()).isEqualTo(NodeId.of("review-n1"));
         assertThat(addNode.node().type()).isEqualTo(REVIEW);
         assertThat(addNode.node().humanGating()).isEqualTo(HumanGating.ALL);
@@ -211,10 +211,10 @@ class ThresholdFaultPolicyTest {
 
         assertThat(mutations).hasSize(2);
         assertThat(mutations.get(0)).isInstanceOf(GraphMutation.AddNode.class);
-        assertThat(mutations.get(1)).isInstanceOf(GraphMutation.AddDependency.class);
-        var addDep = (GraphMutation.AddDependency) mutations.get(1);
-        assertThat(addDep.dependency().from()).isEqualTo(NodeId.of("review-n1"));
-        assertThat(addDep.dependency().to()).isEqualTo(NodeId.of("n1"));
+        assertThat(mutations.get(1)).isInstanceOf(GraphMutation.AddEdge.class);
+        var addEdge = (GraphMutation.AddEdge<?>) mutations.get(1);
+        assertThat(addEdge.from()).isEqualTo("review-n1");
+        assertThat(addEdge.to()).isEqualTo("n1");
     }
 
 
@@ -364,7 +364,7 @@ class ThresholdFaultPolicyTest {
         var mutations = policy.onFault("t1", event, graph, EMPTY_ACTUAL);
 
         assertThat(mutations).hasSize(2);
-        var addNode = (GraphMutation.AddNode) mutations.get(0);
+        var addNode = (GraphMutation.AddNode<DesiredNode>) mutations.get(0);
         assertThat(addNode.node().type()).isEqualTo(AI_REVIEW);
     }
 
@@ -386,7 +386,7 @@ class ThresholdFaultPolicyTest {
         var mutations = policy.onFault("t1", event, graphWithAi, EMPTY_ACTUAL);
 
         assertThat(mutations).hasSize(2);
-        var addNode = (GraphMutation.AddNode) mutations.get(0);
+        var addNode = (GraphMutation.AddNode<DesiredNode>) mutations.get(0);
         assertThat(addNode.node().type()).isEqualTo(HUMAN_REVIEW);
     }
 
@@ -402,7 +402,7 @@ class ThresholdFaultPolicyTest {
         var mutations = policy.onFault("t1", event, graph, EMPTY_ACTUAL);
 
         assertThat(mutations).hasSize(2);
-        var addNode = (GraphMutation.AddNode) mutations.get(0);
+        var addNode = (GraphMutation.AddNode<DesiredNode>) mutations.get(0);
         assertThat(addNode.node().type()).isEqualTo(AI_REVIEW);
     }
 

@@ -17,7 +17,7 @@ import java.util.List;
 public class EnsureMonitoringRule {
 
     @GraphRule
-    public static List<GraphMutation> ensureMonitoring(
+    public static List<GraphMutation<DesiredNode>> ensureMonitoring(
             @Match(type = "sink") DesiredNode sink,
             @NotExists(type = "monitor", of = "sink", direction = Direction.DEPENDENTS) Void guard) {
         return GraphMutations.addNodeDependingOn(

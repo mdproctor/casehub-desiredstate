@@ -1,24 +1,22 @@
 package io.casehub.desiredstate.annotations.runtime;
 
-import io.casehub.desiredstate.api.NodeId;
-
 import java.util.List;
 
 public class GraphViolationException extends RuntimeException {
 
-    private final List<NodeId> affectedNodes;
+    private final List<String> affectedNodes;
 
     public GraphViolationException(String message) {
         super(message);
         this.affectedNodes = List.of();
     }
 
-    public GraphViolationException(String message, NodeId... nodes) {
+    public GraphViolationException(String message, String... nodes) {
         super(message);
         this.affectedNodes = List.of(nodes);
     }
 
-    public List<NodeId> affectedNodes() {
+    public List<String> affectedNodes() {
         return affectedNodes;
     }
 }

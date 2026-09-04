@@ -7,11 +7,11 @@ import io.casehub.desiredstate.api.CbrPath;
 import io.casehub.desiredstate.api.CbrProposal;
 import io.casehub.desiredstate.api.ConfigurationAdapter;
 import io.casehub.desiredstate.api.ConfigurationRetriever;
+import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.DesiredStateGraph;
 import io.casehub.desiredstate.api.FaultEvent;
 import io.casehub.desiredstate.api.FaultPolicy;
 import io.casehub.desiredstate.api.GraphMutation;
-import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.RetrievalContext;
 import io.casehub.desiredstate.api.RetrievedConfiguration;
 import io.casehub.platform.api.preferences.PreferenceProvider;
@@ -50,7 +50,7 @@ public class CbrFaultPolicy implements FaultPolicy {
     }
 
     @Override
-    public List<GraphMutation> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
+    public List<GraphMutation<DesiredNode>> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
         CbrConfiguration config = resolveConfiguration(tenancyId);
 
         RetrievalContext context = RetrievalContext.forFault(current, actual, event);
@@ -62,15 +62,15 @@ public class CbrFaultPolicy implements FaultPolicy {
         }
 
         LOG.log(Level.INFO, "cbr.retrieve: {0} candidate(s), top confidence={1}",
-            new Object[]{candidates.size(), candidates.stream()
-                .mapToDouble(RetrievedConfiguration::confidence).max().orElse(0.0)});
+                new Object[]{candidates.size(), candidates.stream()
+                                                          .mapToDouble(RetrievedConfiguration::confidence).max().orElse(0.0)});
 
         Optional<AdaptedConfiguration> best = candidates.stream()
-            .filter(c -> c.confidence() >= config.minimumRetrievalConfidence())
-            .map(c -> adapter.adapt(c, context))
-            .flatMap(Optional::stream)
-            .filter(a -> a.confidence() >= config.minimumAdaptationConfidence())
-            .max(Comparator.comparingDouble(AdaptedConfiguration::confidence));
+                                                        .filter(c -> c.confidence() >= config.minimumRetrievalConfidence())
+                                                        .map(c -> adapter.adapt(c, context))
+                                                        .flatMap(Optional::stream)
+                                                        .filter(a -> a.confidence() >= config.minimumAdaptationConfidence())
+                                                        .max(Comparator.comparingDouble(AdaptedConfiguration::confidence));
 
         if (best.isEmpty()) {
             LOG.log(Level.INFO, "cbr.no-candidate: no candidate survived confidence gates");
@@ -79,18 +79,18 @@ public class CbrFaultPolicy implements FaultPolicy {
 
         AdaptedConfiguration selected = best.get();
         LOG.log(Level.INFO, "cbr.selected: sourceId={0}, confidence={1}, path=fault",
-            new Object[]{selected.sourceId(), selected.confidence()});
+                new Object[]{selected.sourceId(), selected.confidence()});
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, selected.graph());
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, selected.graph());
 
-        Set<NodeId> affectedNodeIds = mutations.stream()
-            .map(GraphDiff::targetNodeId)
-            .filter(Objects::nonNull)
-            .collect(Collectors.toSet());
+        Set<String> affectedNodeIds = mutations.stream()
+                                               .map(GraphDiff::targetNodeId)
+                                               .filter(Objects::nonNull)
+                                               .collect(Collectors.toSet());
 
         if (!affectedNodeIds.isEmpty()) {
             tracker.recordProposal(tenancyId, new CbrProposal(
-                selected.sourceId(), CbrPath.FAULT, affectedNodeIds, Instant.now()));
+                    selected.sourceId(), CbrPath.FAULT, affectedNodeIds, Instant.now()));
         }
 
         return mutations;

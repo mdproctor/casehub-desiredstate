@@ -102,12 +102,12 @@ class YamlFaultPolicyBuilderTest {
         assertThat(policy.onFault("tenant-1", event, graph, new ActualState(Map.of()))).isEmpty();
 
         // Failure 3: AI review triggered — spec carries the faulted node's details
-        List<GraphMutation> mutations = policy.onFault("tenant-1", event, graph, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("tenant-1", event, graph, new ActualState(Map.of()));
         assertThat(mutations).isNotEmpty();
 
-        GraphMutation.AddNode addNode = mutations.stream()
-                                                 .filter(m -> m instanceof GraphMutation.AddNode)
-                                                 .map(m -> (GraphMutation.AddNode) m)
+        GraphMutation.AddNode<DesiredNode> addNode = mutations.stream()
+                                                 .filter(m -> m instanceof GraphMutation.AddNode<?>)
+                                                 .map(m -> (GraphMutation.AddNode<DesiredNode>) m)
                                                  .findFirst()
                                                  .orElseThrow();
 
@@ -152,12 +152,12 @@ class YamlFaultPolicyBuilderTest {
         assertThat(policy.onFault("tenant-1", event, graph, new ActualState(Map.of()))).isEmpty();
 
         // Failure 3: AI review triggered — an AI agent investigates the disk issue
-        List<GraphMutation> aiMutations = policy.onFault("tenant-1", event, graph, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> aiMutations = policy.onFault("tenant-1", event, graph, new ActualState(Map.of()));
         assertThat(aiMutations).as("3rd failure should trigger AI review").isNotEmpty();
 
         // Apply the AI review node to the graph — simulating what the reconciliation loop does
         DesiredStateGraph graphWithAiReview = graph;
-        for (GraphMutation mutation : aiMutations) {
+        for (GraphMutation<DesiredNode> mutation : aiMutations) {
             graphWithAiReview = graphWithAiReview.withMutation(mutation);
         }
 
@@ -165,12 +165,12 @@ class YamlFaultPolicyBuilderTest {
         assertThat(policy.onFault("tenant-1", event, graphWithAiReview, new ActualState(Map.of()))).isEmpty();
 
         // Failure 5: human review triggered — the AI couldn't fix it, a human gets pulled in
-        List<GraphMutation> humanMutations = policy.onFault("tenant-1", event, graphWithAiReview, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> humanMutations = policy.onFault("tenant-1", event, graphWithAiReview, new ActualState(Map.of()));
         assertThat(humanMutations).as("5th failure should trigger human review").isNotEmpty();
 
-        GraphMutation.AddNode humanAdd = humanMutations.stream()
-                                                       .filter(m -> m instanceof GraphMutation.AddNode)
-                                                       .map(m -> (GraphMutation.AddNode) m)
+        GraphMutation.AddNode<DesiredNode> humanAdd = humanMutations.stream()
+                                                       .filter(m -> m instanceof GraphMutation.AddNode<?>)
+                                                       .map(m -> (GraphMutation.AddNode<DesiredNode>) m)
                                                        .findFirst().orElseThrow();
 
         HumanReviewSpec humanSpec = (HumanReviewSpec) humanAdd.node().spec();
@@ -206,12 +206,12 @@ class YamlFaultPolicyBuilderTest {
                 NodeId.of("my-service"), FaultType.PROVISION_FAILED, "error");
 
         // Failure 1: AI review — should have HumanGating.NONE (AI handles it, no human approval)
-        List<GraphMutation> mutations = policy.onFault("t1", event, graph, new ActualState(Map.of()));
+        List<GraphMutation<DesiredNode>> mutations = policy.onFault("t1", event, graph, new ActualState(Map.of()));
         assertThat(mutations).isNotEmpty();
 
-        GraphMutation.AddNode aiNode = mutations.stream()
-                                                .filter(m -> m instanceof GraphMutation.AddNode)
-                                                .map(m -> (GraphMutation.AddNode) m)
+        GraphMutation.AddNode<DesiredNode> aiNode = mutations.stream()
+                                                .filter(m -> m instanceof GraphMutation.AddNode<?>)
+                                                .map(m -> (GraphMutation.AddNode<DesiredNode>) m)
                                                 .findFirst().orElseThrow();
         assertThat(aiNode.node().humanGating())
                 .as("AI review should not require human approval")

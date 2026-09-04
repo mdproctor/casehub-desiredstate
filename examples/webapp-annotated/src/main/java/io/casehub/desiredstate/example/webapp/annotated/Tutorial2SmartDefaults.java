@@ -125,7 +125,7 @@ public interface Tutorial2SmartDefaults {
     // If a confirmation node doesn't have a notification dependent, add one.
 
     @GraphRule
-    static List<GraphMutation> autoNotifyConfirmations(
+    static List<GraphMutation<DesiredNode>> autoNotifyConfirmations(
             @Match(type = "order-confirmation") DesiredNode confirm,
             @NotExists(type = "notification", of = "confirm",
                     direction = Direction.DEPENDENTS) Void guard) {

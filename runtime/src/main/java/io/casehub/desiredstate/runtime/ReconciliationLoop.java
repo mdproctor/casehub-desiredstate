@@ -718,7 +718,7 @@ public class ReconciliationLoop {
             Span span = GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME).spanBuilder("detectDrift").startSpan();
             try (Scope ignored = span.makeCurrent()) {
                 int driftCount = 0;
-                List<GraphMutation> mutations = new ArrayList<>();
+                List<GraphMutation<DesiredNode>> mutations = new ArrayList<>();
                 DesiredStateGraph mutated = desired;
                 for (Map.Entry<NodeId, DesiredNode> entry : desired.nodes().entrySet()) {
                     NodeStatus status = actual.statuses().getOrDefault(entry.getKey(), NodeStatus.UNKNOWN);
@@ -727,7 +727,7 @@ public class ReconciliationLoop {
                         driftedNodesOut.add(entry.getKey());
                         FaultEvent faultEvent = new FaultEvent(
                                 entry.getKey(), FaultType.NODE_DEGRADED, "Node drifted from desired spec");
-                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
+                        List<GraphMutation<DesiredNode>> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
                         mutations.addAll(faultMutations);
                         for (GraphMutation mutation : faultMutations) {
                             mutated = mutated.withMutation(mutation);
@@ -786,7 +786,7 @@ public class ReconciliationLoop {
 
                 int faultCount = 0;
                 int mutationCount = 0;
-                List<GraphMutation> mutations = new ArrayList<>();
+                List<GraphMutation<DesiredNode>> mutations = new ArrayList<>();
                 DesiredStateGraph mutated = desired;
                 for (Map.Entry<NodeId, StepOutcome> entry : result.outcomes().entrySet()) {
                     if (entry.getValue() instanceof StepOutcome.Failed failed) {
@@ -796,7 +796,7 @@ public class ReconciliationLoop {
                                 : FaultType.PROVISION_FAILED;
                         FaultEvent faultEvent = new FaultEvent(
                                 entry.getKey(), faultType, failed.reason());
-                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
+                        List<GraphMutation<DesiredNode>> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
                         mutationCount += faultMutations.size();
                         mutations.addAll(faultMutations);
                         for (GraphMutation mutation : faultMutations) {
@@ -806,7 +806,7 @@ public class ReconciliationLoop {
                         faultCount++;
                         FaultEvent faultEvent = new FaultEvent(
                                 entry.getKey(), FaultType.APPROVAL_REJECTED, rejected.reason());
-                        List<GraphMutation> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
+                        List<GraphMutation<DesiredNode>> faultMutations = faultPolicyEngine.evaluate(tenancyId, faultEvent, mutated, actual);
                         mutationCount += faultMutations.size();
                         mutations.addAll(faultMutations);
                         for (GraphMutation mutation : faultMutations) {
@@ -829,7 +829,7 @@ public class ReconciliationLoop {
          * accumulated mutations, and retries if the ref was updated concurrently.
          * Mutations are graph-structural and safely re-applicable to any graph version.
          */
-        private void casRetryMutations(List<GraphMutation> mutations) {
+        private void casRetryMutations(List<GraphMutation<DesiredNode>> mutations) {
             DesiredStateGraph current;
             DesiredStateGraph updated;
             do {

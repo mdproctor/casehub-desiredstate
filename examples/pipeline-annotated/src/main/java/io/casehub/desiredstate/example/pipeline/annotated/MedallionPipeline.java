@@ -106,7 +106,7 @@ public interface MedallionPipeline {
     // --- Graph rule: ensure every sink has a monitoring node ---
 
     @GraphRule
-    static List<GraphMutation> ensureMonitoring(
+    static List<GraphMutation<DesiredNode>> ensureMonitoring(
             @Match(type = "sink") DesiredNode sink,
             @NotExists(type = "monitor", of = "sink", direction = Direction.DEPENDENTS) Void guard) {
         return GraphMutations.addNodeDependingOn(

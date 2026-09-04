@@ -51,7 +51,7 @@ public class ThresholdFaultPolicy implements FaultPolicy {
     }
 
     @Override
-    public List<GraphMutation> onFault(String tenancyId, FaultEvent event,
+    public List<GraphMutation<DesiredNode>> onFault(String tenancyId, FaultEvent event,
                                        DesiredStateGraph current, ActualState actual) {
         DesiredNode node = current.nodes().get(event.node());
 

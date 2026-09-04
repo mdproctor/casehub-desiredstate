@@ -24,16 +24,36 @@ class GraphRuleEngineTest {
 
     private final DefaultDesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
     private final GraphRuleEngine engine = new GraphRuleEngine();
+    private final DesiredStateGraphAdapter adapter = new DesiredStateGraphAdapter();
+
+    private DesiredStateGraph evaluate(DesiredStateGraph graph, List<ResolvedRule<DesiredNode>> rules) {
+        var view   = new DesiredStateGraphView(graph, adapter);
+        var result = engine.evaluate(view, rules);
+        return ((DesiredStateGraphView) result).graph();
+    }
+
 
     record Spec(String name, String typeValue) implements NodeSpec {
         @Override
         public NodeType nodeType() { return NodeType.of(typeValue); }
     }
 
-    private ResolvedRule imperativeRule(String methodName) {
+    @SuppressWarnings("unchecked")
+    private ResolvedRule<DesiredNode> imperativeRule(String methodName) {
         try {
             Method m = GraphRuleEngineTest.class.getDeclaredMethod(methodName, DesiredStateGraph.class);
-            return new ResolvedRule.ImperativeRule(methodName, m, null);
+            return new ResolvedRule.ImperativeRule<>(methodName, view -> {
+                try {
+                    DesiredStateGraph graph  = ((DesiredStateGraphView) view).graph();
+                    var               result = (List<GraphMutation<DesiredNode>>) m.invoke(null, graph);
+                    return result != null ? result : List.of();
+                } catch (java.lang.reflect.InvocationTargetException e) {
+                    if (e.getCause() instanceof RuntimeException re) {throw re;}
+                    throw new RuntimeException(e.getCause());
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         } catch (NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
@@ -43,8 +63,7 @@ class GraphRuleEngineTest {
 
     static List<GraphMutation> addMonitorRule(DesiredStateGraph graph) {
         if (graph.nodes().containsKey(NodeId.of("monitor"))) return List.of();
-        return List.of(new GraphMutation.AddNode(
-                new DesiredNode(NodeId.of("monitor"), new Spec("monitor", "monitor"), HumanGating.NONE)));
+        return List.of(new GraphMutation.AddNode<>("monitor", new DesiredNode(NodeId.of("monitor"), new Spec("monitor", "monitor"), HumanGating.NONE)));
     }
 
     @Test
@@ -52,7 +71,7 @@ class GraphRuleEngineTest {
         var graph = factory.of(
                 List.of(new DesiredNode(NodeId.of("sink"), new Spec("sink", "sink"), HumanGating.NONE)),
                 List.of());
-        var result = engine.evaluate(graph, List.of(imperativeRule("addMonitorRule")));
+        var result = evaluate(graph, List.of(imperativeRule("addMonitorRule")));
         assertThat(result.nodes()).containsKey(NodeId.of("monitor"));
         assertThat(result.nodes()).hasSize(2);
     }
@@ -62,21 +81,21 @@ class GraphRuleEngineTest {
         var graph = factory.of(
                 List.of(new DesiredNode(NodeId.of("a"), new Spec("a", "a"), HumanGating.NONE)),
                 List.of());
-        var result = engine.evaluate(graph, List.of());
+        var result = evaluate(graph, List.of());
         assertThat(result.nodes()).hasSize(1);
     }
 
     // --- Non-convergence ---
 
     static List<GraphMutation> alwaysMutateRule(DesiredStateGraph graph) {
-        return List.of(new GraphMutation.AddNode(
+        return List.of(new GraphMutation.AddNode<>("x-" + graph.version(),
                 new DesiredNode(NodeId.of("x-" + graph.version()), new Spec("x", "x"), HumanGating.NONE)));
     }
 
     @Test
     void nonConvergenceThrowsException() {
         var graph = factory.of(List.of(), List.of());
-        assertThatThrownBy(() -> engine.evaluate(graph, List.of(imperativeRule("alwaysMutateRule"))))
+        assertThatThrownBy(() -> evaluate(graph, List.of(imperativeRule("alwaysMutateRule"))))
                 .isInstanceOf(GraphRuleNonConvergenceException.class)
                 .hasMessageContaining("alwaysMutateRule")
                 .hasMessageContaining("100");
@@ -85,19 +104,17 @@ class GraphRuleEngineTest {
     // --- Conflict detection: same NodeId, different specs ---
 
     static List<GraphMutation> addNodeA(DesiredStateGraph graph) {
-        return List.of(new GraphMutation.AddNode(
-                new DesiredNode(NodeId.of("dup"), new Spec("a", "a"), HumanGating.NONE)));
+        return List.of(new GraphMutation.AddNode<>("dup", new DesiredNode(NodeId.of("dup"), new Spec("a", "a"), HumanGating.NONE)));
     }
 
     static List<GraphMutation> addNodeADifferent(DesiredStateGraph graph) {
-        return List.of(new GraphMutation.AddNode(
-                new DesiredNode(NodeId.of("dup"), new Spec("b", "b"), HumanGating.NONE)));
+        return List.of(new GraphMutation.AddNode<>("dup", new DesiredNode(NodeId.of("dup"), new Spec("b", "b"), HumanGating.NONE)));
     }
 
     @Test
     void conflictingMutationsThrowException() {
         var graph = factory.of(List.of(), List.of());
-        assertThatThrownBy(() -> engine.evaluate(graph,
+        assertThatThrownBy(() -> evaluate(graph,
                 List.of(imperativeRule("addNodeA"), imperativeRule("addNodeADifferent"))))
                 .isInstanceOf(ConflictingMutationException.class)
                 .hasMessageContaining("dup");
@@ -108,19 +125,19 @@ class GraphRuleEngineTest {
     static List<GraphMutation> duplicateMutationRule(DesiredStateGraph graph) {
         if (graph.nodes().containsKey(NodeId.of("d"))) return List.of();
         var node = new DesiredNode(NodeId.of("d"), new Spec("d", "d"), HumanGating.NONE);
-        return List.of(new GraphMutation.AddNode(node));
+        return List.of(new GraphMutation.AddNode<>(node.id().value(), node));
     }
 
     static List<GraphMutation> duplicateMutationRule2(DesiredStateGraph graph) {
         if (graph.nodes().containsKey(NodeId.of("d"))) return List.of();
         var node = new DesiredNode(NodeId.of("d"), new Spec("d", "d"), HumanGating.NONE);
-        return List.of(new GraphMutation.AddNode(node));
+        return List.of(new GraphMutation.AddNode<>(node.id().value(), node));
     }
 
     @Test
     void identicalDuplicateMutationsDeduplicated() {
         var graph = factory.of(List.of(), List.of());
-        var result = engine.evaluate(graph,
+        var result = evaluate(graph,
                 List.of(imperativeRule("duplicateMutationRule"), imperativeRule("duplicateMutationRule2")));
         assertThat(result.nodes()).containsKey(NodeId.of("d"));
     }
@@ -128,7 +145,7 @@ class GraphRuleEngineTest {
     // --- Cycle detection ---
 
     static List<GraphMutation> createCycleRule(DesiredStateGraph graph) {
-        return List.of(new GraphMutation.AddDependency(new Dependency(NodeId.of("b"), NodeId.of("a"))));
+        return List.of(new GraphMutation.AddEdge<>("b", "a"));
     }
 
     @Test
@@ -138,7 +155,7 @@ class GraphRuleEngineTest {
                         new DesiredNode(NodeId.of("a"), new Spec("a", "a"), HumanGating.NONE),
                         new DesiredNode(NodeId.of("b"), new Spec("b", "b"), HumanGating.NONE)),
                 List.of(new Dependency(NodeId.of("a"), NodeId.of("b"))));
-        assertThatThrownBy(() -> engine.evaluate(graph, List.of(imperativeRule("createCycleRule"))))
+        assertThatThrownBy(() -> evaluate(graph, List.of(imperativeRule("createCycleRule"))))
                 .isInstanceOf(GraphRuleCycleException.class);
     }
 
@@ -147,8 +164,8 @@ class GraphRuleEngineTest {
     static List<GraphMutation> addEdgeAndRemoveNode(DesiredStateGraph graph) {
         if (!graph.nodes().containsKey(NodeId.of("b"))) return List.of();
         return List.of(
-                new GraphMutation.RemoveNode(NodeId.of("b")),
-                new GraphMutation.AddDependency(new Dependency(NodeId.of("c"), NodeId.of("a"))));
+                new GraphMutation.RemoveNode<>("b"),
+                new GraphMutation.AddEdge<>("c", "a"));
     }
 
     @Test
@@ -160,7 +177,7 @@ class GraphRuleEngineTest {
                         new DesiredNode(NodeId.of("c"), new Spec("c", "c"), HumanGating.NONE)),
                 List.of(new Dependency(NodeId.of("a"), NodeId.of("b")),
                         new Dependency(NodeId.of("b"), NodeId.of("c"))));
-        var result = engine.evaluate(graph, List.of(imperativeRule("addEdgeAndRemoveNode")));
+        var result = evaluate(graph, List.of(imperativeRule("addEdgeAndRemoveNode")));
         assertThat(result.nodes()).doesNotContainKey(NodeId.of("b"));
         assertThat(result.dependencies()).contains(new Dependency(NodeId.of("c"), NodeId.of("a")));
     }
@@ -168,11 +185,11 @@ class GraphRuleEngineTest {
     // --- Contradictory edge mutations ---
 
     static List<GraphMutation> contradictoryEdgeRule1(DesiredStateGraph graph) {
-        return List.of(new GraphMutation.AddDependency(new Dependency(NodeId.of("a"), NodeId.of("b"))));
+        return List.of(new GraphMutation.AddEdge<>("a", "b"));
     }
 
     static List<GraphMutation> contradictoryEdgeRule2(DesiredStateGraph graph) {
-        return List.of(new GraphMutation.RemoveDependency(new Dependency(NodeId.of("a"), NodeId.of("b"))));
+        return List.of(new GraphMutation.RemoveEdge<>("a", "b"));
     }
 
     @Test
@@ -182,23 +199,23 @@ class GraphRuleEngineTest {
                         new DesiredNode(NodeId.of("a"), new Spec("a", "a"), HumanGating.NONE),
                         new DesiredNode(NodeId.of("b"), new Spec("b", "b"), HumanGating.NONE)),
                 List.of());
-        assertThatThrownBy(() -> engine.evaluate(graph,
+        assertThatThrownBy(() -> evaluate(graph,
                 List.of(imperativeRule("contradictoryEdgeRule1"), imperativeRule("contradictoryEdgeRule2"))))
                 .isInstanceOf(ConflictingMutationException.class);
     }
 
     // --- Parameterized rule helpers ---
 
-    private ResolvedRule parameterizedRule(String methodName,
-            List<PatternParameterDescriptor> patterns) {
+    private ResolvedRule<DesiredNode> parameterizedRule(String methodName,
+                                                        List<PatternParameterDescriptor> patterns) {
         try {
             Class<?>[] paramTypes = new Class<?>[patterns.size()];
             for (int i = 0; i < patterns.size(); i++) {
                 paramTypes[i] = patterns.get(i).kind() == PatternKind.NOT_EXISTS
-                        ? Void.class : DesiredNode.class;
+                                ? Void.class : DesiredNode.class;
             }
             Method m = GraphRuleEngineTest.class.getDeclaredMethod(methodName, paramTypes);
-            return new ResolvedRule.ParameterizedReflectiveRule(methodName, m, null, patterns);
+            return new ResolvedRule.ParameterizedRule<>(methodName, m, null, patterns);
         } catch (NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
@@ -207,7 +224,7 @@ class GraphRuleEngineTest {
     // --- Parameterized rule method implementations ---
 
     static List<GraphMutation> addValidatorForTransformer(DesiredNode transformer) {
-        return List.of(new GraphMutation.AddNode(
+        return List.of(new GraphMutation.AddNode<>("validator-" + transformer.id().value(),
                 new DesiredNode(NodeId.of("validator-" + transformer.id().value()),
                         new Spec("validator", "validator"), HumanGating.NONE)));
     }
@@ -221,14 +238,14 @@ class GraphRuleEngineTest {
                 List.of());
         var rule = parameterizedRule("addValidatorForTransformer", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "transformer", "", Direction.DEPENDENCIES)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).containsKey(NodeId.of("validator-tx1"));
         assertThat(result.nodes()).containsKey(NodeId.of("validator-tx2"));
         assertThat(result.nodes()).doesNotContainKey(NodeId.of("validator-src"));
     }
 
     static List<GraphMutation> bindDirectDep(DesiredNode matched, DesiredNode dep) {
-        return List.of(new GraphMutation.AddNode(
+        return List.of(new GraphMutation.AddNode<>("found-" + dep.id().value(),
                 new DesiredNode(NodeId.of("found-" + dep.id().value()),
                         new Spec("found", "found"), HumanGating.NONE)));
     }
@@ -242,7 +259,7 @@ class GraphRuleEngineTest {
         var rule = parameterizedRule("bindDirectDep", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "transformer", "", Direction.DEPENDENCIES),
                 new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "source", "", Direction.DEPENDENCIES)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).containsKey(NodeId.of("found-src"));
     }
 
@@ -255,12 +272,12 @@ class GraphRuleEngineTest {
         var rule = parameterizedRule("bindDirectDep", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "source", "", Direction.DEPENDENCIES),
                 new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "transformer", "", Direction.DEPENDENTS)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).containsKey(NodeId.of("found-tx"));
     }
 
     static List<GraphMutation> bindReachable(DesiredNode matched, DesiredNode reached) {
-        return List.of(new GraphMutation.AddNode(
+        return List.of(new GraphMutation.AddNode<>("reached-" + reached.id().value(),
                 new DesiredNode(NodeId.of("reached-" + reached.id().value()),
                         new Spec("reached", "reached"), HumanGating.NONE)));
     }
@@ -276,12 +293,12 @@ class GraphRuleEngineTest {
         var rule = parameterizedRule("bindReachable", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "transformer", "", Direction.DEPENDENCIES),
                 new PatternParameterDescriptor(PatternKind.REACHES, "source", "", Direction.DEPENDENCIES)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).containsKey(NodeId.of("reached-src"));
     }
 
     static List<GraphMutation> guardedRule(DesiredNode transformer, Void guard) {
-        return List.of(new GraphMutation.AddNode(
+        return List.of(new GraphMutation.AddNode<>("validator-" + transformer.id().value(),
                 new DesiredNode(NodeId.of("validator-" + transformer.id().value()),
                         new Spec("validator", "validator"), HumanGating.NONE)));
     }
@@ -295,7 +312,7 @@ class GraphRuleEngineTest {
         var rule = parameterizedRule("guardedRule", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "transformer", "", Direction.DEPENDENCIES),
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "validator", "", Direction.DEPENDENCIES)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).hasSize(2);
     }
 
@@ -307,7 +324,7 @@ class GraphRuleEngineTest {
         var rule = parameterizedRule("guardedRule", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "transformer", "", Direction.DEPENDENCIES),
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "validator", "", Direction.DEPENDENCIES)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).containsKey(NodeId.of("validator-tx"));
     }
 
@@ -320,7 +337,7 @@ class GraphRuleEngineTest {
         var rule = parameterizedRule("guardedRule", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "transformer", "", Direction.DEPENDENCIES),
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "validator", "transformer", Direction.DEPENDENTS)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).hasSize(2);
     }
 
@@ -333,7 +350,7 @@ class GraphRuleEngineTest {
         var rule = parameterizedRule("guardedRule", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "transformer", "", Direction.DEPENDENCIES),
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "validator", "transformer", Direction.DEPENDENTS)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).containsKey(NodeId.of("validator-tx"));
     }
 
@@ -345,7 +362,7 @@ class GraphRuleEngineTest {
         var rule = parameterizedRule("guardedRule", List.of(
                 new PatternParameterDescriptor(PatternKind.MATCH, "transformer", "", Direction.DEPENDENCIES),
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "validator", "", Direction.DEPENDENCIES)));
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).containsKey(NodeId.of("validator-tx"));
         assertThat(result.nodes()).hasSize(2);
     }
@@ -358,24 +375,24 @@ class GraphRuleEngineTest {
                                        new DesiredNode(NodeId.of("sink-1"), new Spec("sink-1", "sink"), HumanGating.NONE)),
                                List.of());
 
-        Function<Map<String, DesiredNode>, List<GraphMutation>> evaluator = bindings -> {
+        Function<Map<String, DesiredNode>, List<GraphMutation<DesiredNode>>> evaluator = bindings -> {
             DesiredNode sink = bindings.get("sink");
             DesiredNode monitor = new DesiredNode(
                     NodeId.of("monitor-" + sink.id().value()),
                     new Spec("monitor-" + sink.id().value(), "monitor"), HumanGating.NONE);
             return List.of(
-                    new GraphMutation.AddNode(monitor),
-                    new GraphMutation.AddDependency(new Dependency(monitor.id(), sink.id())));
+                    new GraphMutation.AddNode<>(monitor.id().value(), monitor),
+                    new GraphMutation.AddEdge<>(monitor.id().value(), sink.id().value()));
         };
 
-        var rule = new ResolvedRule.DeclarativeRule("ensure-monitoring",
+        var rule = new ResolvedRule.DeclarativeRule<>("ensure-monitoring",
                                                     List.of(
                                                             new PatternParameterDescriptor(PatternKind.MATCH, "sink", "", Direction.DEPENDENCIES),
                                                             new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "monitor", "sink", Direction.DEPENDENTS)),
                                                     new String[]{"sink", "guard"},
                                                     evaluator);
 
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).hasSize(2);
         assertThat(result.nodes()).containsKey(NodeId.of("monitor-sink-1"));
         assertThat(result.dependencies()).contains(
@@ -389,24 +406,24 @@ class GraphRuleEngineTest {
                                        new DesiredNode(NodeId.of("sink-2"), new Spec("sink-2", "sink"), HumanGating.NONE)),
                                List.of());
 
-        Function<Map<String, DesiredNode>, List<GraphMutation>> evaluator = bindings -> {
+        Function<Map<String, DesiredNode>, List<GraphMutation<DesiredNode>>> evaluator = bindings -> {
             DesiredNode sink = bindings.get("sink");
             DesiredNode monitor = new DesiredNode(
                     NodeId.of("monitor-" + sink.id().value()),
                     new Spec("monitor", "monitor"), HumanGating.NONE);
             return List.of(
-                    new GraphMutation.AddNode(monitor),
-                    new GraphMutation.AddDependency(new Dependency(monitor.id(), sink.id())));
+                    new GraphMutation.AddNode<>(monitor.id().value(), monitor),
+                    new GraphMutation.AddEdge<>(monitor.id().value(), sink.id().value()));
         };
 
-        var rule = new ResolvedRule.DeclarativeRule("ensure-monitoring",
+        var rule = new ResolvedRule.DeclarativeRule<>("ensure-monitoring",
                                                     List.of(
                                                             new PatternParameterDescriptor(PatternKind.MATCH, "sink", "", Direction.DEPENDENCIES),
                                                             new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "monitor", "sink", Direction.DEPENDENTS)),
                                                     new String[]{"sink", "guard"},
                                                     evaluator);
 
-        var result = engine.evaluate(graph, List.of(rule));
+        var result = evaluate(graph, List.of(rule));
         assertThat(result.nodes()).hasSize(4);
         assertThat(result.nodes()).containsKey(NodeId.of("monitor-sink-1"));
         assertThat(result.nodes()).containsKey(NodeId.of("monitor-sink-2"));

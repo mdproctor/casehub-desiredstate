@@ -21,7 +21,7 @@ import java.util.Set;
 
 public class ZoneRebalanceFaultPolicy implements FaultPolicy {
 
-    public List<GraphMutation> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
+    public List<GraphMutation<DesiredNode>> onFault(String tenancyId, FaultEvent event, DesiredStateGraph current, ActualState actual) {
         if (event.type() != FaultType.NODE_DEGRADED) {
             return List.of();
         }
@@ -65,17 +65,17 @@ public class ZoneRebalanceFaultPolicy implements FaultPolicy {
             normalized.put(entry.getKey(), entry.getValue() / total);
         }
 
-        List<GraphMutation> mutations = new ArrayList<>();
+        List<GraphMutation<DesiredNode>> mutations = new ArrayList<>();
         ZoneSpec newZoneSpec = new ZoneSpec(
                 zoneSpec.zoneName(), normalized, zoneSpec.totalForce());
-        mutations.add(new GraphMutation.UpdateNode(event.node(),
+        mutations.add(new GraphMutation.UpdateNode<>(event.node().value(),
                 new DesiredNode(node.id(), newZoneSpec, node.humanGating())));
 
         for (var entry : normalized.entrySet()) {
             NodeId unitId   = NodeId.of("unit-" + entry.getKey().value());
             int    strength = (int) Math.round(zoneSpec.totalForce() * entry.getValue());
             DesiredNode existingUnit = current.nodes().get(unitId);
-            mutations.add(new GraphMutation.UpdateNode(unitId,
+            mutations.add(new GraphMutation.UpdateNode<>(unitId.value(),
                 new DesiredNode(unitId, new UnitSpec(entry.getKey(), strength), existingUnit.humanGating())));
         }
 

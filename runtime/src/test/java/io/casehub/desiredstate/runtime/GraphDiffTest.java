@@ -38,7 +38,7 @@ class GraphDiffTest {
 
     @Test
     void emptyBothGraphs_shouldReturnNoMutations() {
-        List<GraphMutation> mutations = GraphDiff.computeMutations(
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(
             ImmutableDesiredStateGraph.empty(), ImmutableDesiredStateGraph.empty());
         assertThat(mutations).isEmpty();
     }
@@ -48,11 +48,11 @@ class GraphDiffTest {
         DesiredStateGraph current = ImmutableDesiredStateGraph.empty();
         DesiredStateGraph adapted = graph(node("n1", "v1"));
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).hasSize(1);
         assertThat(mutations.get(0)).isInstanceOf(GraphMutation.AddNode.class);
-        assertThat(((GraphMutation.AddNode) mutations.get(0)).node().id()).isEqualTo(NodeId.of("n1"));
+        assertThat(((GraphMutation.AddNode<DesiredNode>) mutations.get(0)).node().id()).isEqualTo(NodeId.of("n1"));
     }
 
     @Test
@@ -60,12 +60,12 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(node("n1", "v1"));
         DesiredStateGraph adapted = graph(node("n1", "v2"));
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).hasSize(1);
         assertThat(mutations.get(0)).isInstanceOf(GraphMutation.UpdateNode.class);
-        GraphMutation.UpdateNode update = (GraphMutation.UpdateNode) mutations.get(0);
-        assertThat(update.id()).isEqualTo(NodeId.of("n1"));
+        var update = (GraphMutation.UpdateNode<DesiredNode>) mutations.get(0);
+        assertThat(update.id()).isEqualTo("n1");
         assertThat(update.adaptedNode().spec()).isEqualTo(new TestSpec("v2"));
     }
 
@@ -74,7 +74,7 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(node("n1", "v1"));
         DesiredStateGraph adapted = graph(node("n1", "v1"));
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).isEmpty();
     }
@@ -87,7 +87,7 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(n1, n3);
         DesiredStateGraph adapted = graph(n1);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).isEmpty();
     }
@@ -101,11 +101,11 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(n1, n2, n3);
         DesiredStateGraph adapted = graph(n1);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).hasSize(1);
         assertThat(mutations.get(0)).isInstanceOf(GraphMutation.RemoveNode.class);
-        assertThat(((GraphMutation.RemoveNode) mutations.get(0)).id()).isEqualTo(NodeId.of("n2"));
+        assertThat(((GraphMutation.RemoveNode<?>) mutations.get(0)).id()).isEqualTo("n2");
     }
 
     @Test
@@ -117,11 +117,13 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(n1, n2);
         DesiredStateGraph adapted = graph(n1, n2).withDependency(dep);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).hasSize(1);
-        assertThat(mutations.get(0)).isInstanceOf(GraphMutation.AddDependency.class);
-        assertThat(((GraphMutation.AddDependency) mutations.get(0)).dependency()).isEqualTo(dep);
+        assertThat(mutations.get(0)).isInstanceOf(GraphMutation.AddEdge.class);
+        var addEdge = (GraphMutation.AddEdge<?>) mutations.get(0);
+        assertThat(addEdge.from()).isEqualTo(dep.from().value());
+        assertThat(addEdge.to()).isEqualTo(dep.to().value());
     }
 
     @Test
@@ -133,10 +135,10 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(n2);
         DesiredStateGraph adapted = graph(n1, n2).withDependency(dep);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).filteredOn(m -> m instanceof GraphMutation.AddNode).hasSize(1);
-        assertThat(mutations).filteredOn(m -> m instanceof GraphMutation.AddDependency).hasSize(1);
+        assertThat(mutations).filteredOn(m -> m instanceof GraphMutation.AddEdge).hasSize(1);
     }
 
     @Test
@@ -148,10 +150,10 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(n1, n2).withDependency(dep);
         DesiredStateGraph adapted = graph(n1, n2);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).hasSize(1);
-        assertThat(mutations.get(0)).isInstanceOf(GraphMutation.RemoveDependency.class);
+        assertThat(mutations.get(0)).isInstanceOf(GraphMutation.RemoveEdge.class);
     }
 
     @Test
@@ -163,9 +165,9 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(n1, n2).withDependency(dep);
         DesiredStateGraph adapted = graph(n1);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
-        assertThat(mutations).filteredOn(m -> m instanceof GraphMutation.RemoveDependency).isEmpty();
+        assertThat(mutations).filteredOn(m -> m instanceof GraphMutation.RemoveEdge).isEmpty();
     }
 
     @Test
@@ -177,7 +179,7 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(n1, n2);
         DesiredStateGraph adapted = graph(node("n1", "test", "v1-updated"), n3);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).filteredOn(m -> m instanceof GraphMutation.UpdateNode).hasSize(1);
         assertThat(mutations).filteredOn(m -> m instanceof GraphMutation.AddNode).hasSize(1);
@@ -193,7 +195,7 @@ class GraphDiffTest {
         DesiredStateGraph current = graph(n1, n2).withDependency(dep);
         DesiredStateGraph adapted = graph(n1, n2).withDependency(dep);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(current, adapted);
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(current, adapted);
 
         assertThat(mutations).isEmpty();
     }
@@ -201,29 +203,27 @@ class GraphDiffTest {
     @Test
     void targetNodeId_addNode() {
         DesiredNode n = node("n1", "v1");
-        assertThat(GraphDiff.targetNodeId(new GraphMutation.AddNode(n))).isEqualTo(NodeId.of("n1"));
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.AddNode<>(n.id().value(), n))).isEqualTo("n1");
     }
 
     @Test
     void targetNodeId_removeNode() {
-        assertThat(GraphDiff.targetNodeId(new GraphMutation.RemoveNode(NodeId.of("n1")))).isEqualTo(NodeId.of("n1"));
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.RemoveNode<>("n1"))).isEqualTo("n1");
     }
 
     @Test
     void targetNodeId_updateNode() {
-        assertThat(GraphDiff.targetNodeId(new GraphMutation.UpdateNode(NodeId.of("n1"), node("n1", "v2")))).isEqualTo(NodeId.of("n1"));
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.UpdateNode<>("n1", node("n1", "v2")))).isEqualTo("n1");
     }
 
     @Test
     void targetNodeId_addDependency_returnsNull() {
-        assertThat(GraphDiff.targetNodeId(new GraphMutation.AddDependency(
-                new Dependency(NodeId.of("a"), NodeId.of("b"))))).isNull();
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.AddEdge<>("a", "b"))).isNull();
     }
 
     @Test
     void targetNodeId_removeDependency_returnsNull() {
-        assertThat(GraphDiff.targetNodeId(new GraphMutation.RemoveDependency(
-                new Dependency(NodeId.of("a"), NodeId.of("b"))))).isNull();
+        assertThat(GraphDiff.targetNodeId(new GraphMutation.RemoveEdge<>("a", "b"))).isNull();
     }
 
     @Test
@@ -231,12 +231,12 @@ class GraphDiffTest {
         DesiredNode current = new DesiredNode(NodeId.of("n1"), new TestSpec("v1"), HumanGating.NONE);
         DesiredNode adapted = new DesiredNode(NodeId.of("n1"), new TestSpec("v1"), HumanGating.DEPROVISION_ONLY);
 
-        List<GraphMutation> mutations = GraphDiff.computeMutations(graph(current), graph(adapted));
+        List<GraphMutation<DesiredNode>> mutations = GraphDiff.computeMutations(graph(current), graph(adapted));
 
         assertThat(mutations).hasSize(1);
         assertThat(mutations.get(0)).isInstanceOf(GraphMutation.UpdateNode.class);
         GraphMutation.UpdateNode update = (GraphMutation.UpdateNode) mutations.get(0);
-        assertThat(update.id()).isEqualTo(NodeId.of("n1"));
+        assertThat(update.id()).isEqualTo("n1");
     }
 
 }

@@ -27,6 +27,9 @@ class YamlInvariantEvaluationTest {
 
     private final DefaultDesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
     private final GraphInvariantEngine engine = new GraphInvariantEngine();
+    private final io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter adapter =
+            new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+
 
     record Spec(String name, String typeValue) implements NodeSpec {
         @Override
@@ -52,7 +55,7 @@ class YamlInvariantEvaluationTest {
                 "every-sink-has-upstream", yamlInv);
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                () -> engine.validate(graph, List.of(invariant)));
+                () -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
         assertThat(ex.violations()).hasSize(1);
         assertThat(ex.violations().get(0).message()).contains("sink-1");
         assertThat(ex.violations().get(0).message()).contains("no upstream transformer");
@@ -75,7 +78,7 @@ class YamlInvariantEvaluationTest {
         ResolvedInvariant invariant = YamlInvariantConverter.toDeclarativeInvariant(
                 "every-sink-has-upstream", yamlInv);
 
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
     }
 
     @Test
@@ -94,7 +97,7 @@ class YamlInvariantEvaluationTest {
         ResolvedInvariant invariant = YamlInvariantConverter.toDeclarativeInvariant(
                 "every-sink-has-upstream", yamlInv);
 
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
     }
 
     @Test
@@ -116,7 +119,7 @@ class YamlInvariantEvaluationTest {
                 "no-validator-on-transformer", yamlInv);
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                () -> engine.validate(graph, List.of(invariant)));
+                () -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
         assertThat(ex.violations()).hasSize(1);
     }
 
@@ -137,7 +140,7 @@ class YamlInvariantEvaluationTest {
                 "every-sink-has-upstream", yamlInv);
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                () -> engine.validate(graph, List.of(invariant)));
+                () -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
         assertThat(ex.violations().get(0).message()).contains("every-sink-has-upstream");
         assertThat(ex.violations().get(0).message()).contains("sink-1");
     }
@@ -160,7 +163,7 @@ class YamlInvariantEvaluationTest {
                 "ha-minimum", yamlInv);
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                              () -> engine.validate(graph, List.of(invariant)));
+                              () -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
         assertThat(ex.violations()).hasSize(1);
         assertThat(ex.violations().get(0).message()).contains("at least 3");
     }
@@ -183,7 +186,7 @@ class YamlInvariantEvaluationTest {
         ResolvedInvariant invariant = YamlInvariantConverter.toDeclarativeInvariant(
                 "ha-minimum", yamlInv);
 
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
     }
 
     @Test
@@ -205,7 +208,7 @@ class YamlInvariantEvaluationTest {
                 "lb-routing", yamlInv);
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                              () -> engine.validate(graph, List.of(invariant)));
+                              () -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
         assertThat(ex.violations()).hasSize(1);
     }
 
@@ -226,7 +229,7 @@ class YamlInvariantEvaluationTest {
                 "every-sink-has-upstream", yamlInv);
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                              () -> engine.validate(graph, List.of(invariant)));
+                              () -> engine.validate(new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, adapter), List.of(invariant)));
         assertThat(ex.violations()).hasSize(1);
     }
 }

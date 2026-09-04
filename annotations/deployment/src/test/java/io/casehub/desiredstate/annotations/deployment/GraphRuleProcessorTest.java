@@ -61,7 +61,7 @@ class GraphRuleProcessorTest {
         default SinkSpec sink1() { return new SinkSpec("sink1"); }
 
         @GraphRule
-        static List<GraphMutation> ensureMonitoring(
+        static List<GraphMutation<DesiredNode>> ensureMonitoring(
                 @Match(type = "sink") DesiredNode sink,
                 @NotExists(type = "monitor", of = "sink", direction = Direction.DEPENDENTS) Void guard) {
             return GraphMutations.addNodeDependingOn(

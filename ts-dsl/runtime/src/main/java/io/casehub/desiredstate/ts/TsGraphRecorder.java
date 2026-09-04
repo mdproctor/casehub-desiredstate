@@ -47,8 +47,12 @@ public class TsGraphRecorder {
             DesiredStateGraph graph = factory.of(nodes, deps);
 
             if (crossSurfaceRuleDescriptors != null && !crossSurfaceRuleDescriptors.isEmpty()) {
-                List<ResolvedRule> rules = GraphDescriptorResolver.resolveRules(crossSurfaceRuleDescriptors);
-                graph = new GraphRuleEngine().evaluate(graph, rules);
+                var rules = GraphDescriptorResolver.resolveRules(crossSurfaceRuleDescriptors);
+                var ruleAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+                var ruleView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, ruleAdapter);
+                @SuppressWarnings({"rawtypes", "unchecked"})
+                var evaluated = new GraphRuleEngine().evaluate(ruleView, (java.util.List) rules);
+                graph = ((io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView) evaluated).graph();
             }
 
             List<ResolvedInvariant> effectiveInvariants = new ArrayList<>(invariants);
@@ -56,7 +60,11 @@ public class TsGraphRecorder {
                 effectiveInvariants.addAll(GraphDescriptorResolver.resolveInvariants(crossSurfaceInvariantDescriptors));
             }
             if (!effectiveInvariants.isEmpty()) {
-                new GraphInvariantEngine().validate(graph, effectiveInvariants);
+                var invAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+                var invView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(graph, invAdapter);
+                @SuppressWarnings({"rawtypes", "unchecked"})
+                java.util.List typedInvariants = effectiveInvariants;
+                new GraphInvariantEngine().validate(invView, typedInvariants);
             }
 
             return CompilationResult.single(graph);
@@ -103,7 +111,11 @@ public class TsGraphRecorder {
                 DesiredStateGraph phaseGraph = factory.of(mergedNodes, mergedDeps);
 
                 if (!invariants.isEmpty()) {
-                    new GraphInvariantEngine().validate(phaseGraph, invariants);
+                    var phInvAdapter = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphAdapter();
+                    var phInvView = new io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView(phaseGraph, phInvAdapter);
+                    @SuppressWarnings({"rawtypes", "unchecked"})
+                    java.util.List phTypedInv = invariants;
+                    new GraphInvariantEngine().validate(phInvView, phTypedInv);
                 }
 
                 CompletionCondition condition = resolveCompletionCondition(

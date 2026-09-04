@@ -402,7 +402,7 @@ class ImmutableDesiredStateGraphTest {
 
     @Test void withMutation_addNode() {
         var g = factory.empty()
-                .withMutation(new GraphMutation.AddNode(node("A")));
+                .withMutation(new GraphMutation.AddNode<>("A", node("A")));
 
         assertThat(g.nodes()).containsKey(NodeId.of("A"));
     }
@@ -410,7 +410,7 @@ class ImmutableDesiredStateGraphTest {
     @Test void withMutation_removeNode() {
         var g = factory.empty()
                 .withNode(node("A"))
-                .withMutation(new GraphMutation.RemoveNode(NodeId.of("A")));
+                .withMutation(new GraphMutation.RemoveNode<>("A"));
 
         assertThat(g.isEmpty()).isTrue();
     }
@@ -419,7 +419,7 @@ class ImmutableDesiredStateGraphTest {
         var newSpec = new TestSpec("updated");
         var g = factory.empty()
                 .withNode(node("A"))
-                .withMutation(new GraphMutation.UpdateNode(NodeId.of("A"), new DesiredNode(NodeId.of("A"), newSpec, HumanGating.NONE)));
+                .withMutation(new GraphMutation.UpdateNode<>("A", new DesiredNode(NodeId.of("A"), newSpec, HumanGating.NONE)));
 
         assertThat(g.nodes().get(NodeId.of("A")).spec()).isEqualTo(newSpec);
     }
@@ -427,7 +427,7 @@ class ImmutableDesiredStateGraphTest {
     @Test void withMutation_updateNode_nonexistent_throws() {
         var g = factory.empty();
 
-        assertThatThrownBy(() -> g.withMutation(new GraphMutation.UpdateNode(NodeId.of("phantom"), new DesiredNode(NodeId.of("phantom"), new TestSpec("x"), HumanGating.NONE))))
+        assertThatThrownBy(() -> g.withMutation(new GraphMutation.UpdateNode<>("phantom", new DesiredNode(NodeId.of("phantom"), new TestSpec("x"), HumanGating.NONE))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -435,7 +435,7 @@ class ImmutableDesiredStateGraphTest {
         var g = factory.empty()
                 .withNode(node("A"))
                 .withNode(node("B"))
-                .withMutation(new GraphMutation.AddDependency(dep("B", "A")));
+                .withMutation(new GraphMutation.AddEdge<>("B", "A"));
 
         assertThat(g.dependencies()).containsExactly(dep("B", "A"));
     }
@@ -445,7 +445,7 @@ class ImmutableDesiredStateGraphTest {
                 .withNode(node("A"))
                 .withNode(node("B"))
                 .withDependency(dep("B", "A"))
-                .withMutation(new GraphMutation.RemoveDependency(dep("B", "A")));
+                .withMutation(new GraphMutation.RemoveEdge<>("B", "A"));
 
         assertThat(g.dependencies()).isEmpty();
     }

@@ -22,6 +22,12 @@ class GraphInvariantEngineTest {
 
     private final DefaultDesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
     private final GraphInvariantEngine engine = new GraphInvariantEngine();
+    private final DesiredStateGraphAdapter adapter = new DesiredStateGraphAdapter();
+
+    private void validate(DesiredStateGraph graph, List<ResolvedInvariant<DesiredNode>> invariants) {
+        engine.validate(new DesiredStateGraphView(graph, adapter), invariants);
+    }
+
 
     record Spec(String name, String typeValue) implements NodeSpec {
         @Override
@@ -47,7 +53,7 @@ class GraphInvariantEngineTest {
                         new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "data-source", "sink", Direction.DEPENDENCIES)));
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                () -> engine.validate(graph, List.of(invariant)));
+                () -> validate(graph, List.of(invariant)));
         assertEquals(1, ex.violations().size());
         assertTrue(ex.violations().get(0).message().contains("sink3"));
     }
@@ -67,7 +73,7 @@ class GraphInvariantEngineTest {
                         new PatternParameterDescriptor(PatternKind.MATCH, "sink", "", Direction.DEPENDENCIES),
                         new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "data-source", "sink", Direction.DEPENDENCIES)));
 
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> validate(graph, List.of(invariant)));
     }
 
     // --- vacuously true when no @Match anchors ---
@@ -83,13 +89,13 @@ class GraphInvariantEngineTest {
                         new PatternParameterDescriptor(PatternKind.MATCH, "sink", "", Direction.DEPENDENCIES),
                         new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "data-source", "sink", Direction.DEPENDENCIES)));
 
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> validate(graph, List.of(invariant)));
     }
 
     // --- imperative: violation ---
 
     public static void checkNoOrphans(DesiredStateGraph graph) {
-        throw new GraphViolationException("Orphaned node found", NodeId.of("orphan1"));
+        throw new GraphViolationException("Orphaned node found", "orphan1");
     }
 
     @Test
@@ -98,7 +104,7 @@ class GraphInvariantEngineTest {
         var invariant = imperativeInvariant("checkNoOrphans");
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                () -> engine.validate(graph, List.of(invariant)));
+                () -> validate(graph, List.of(invariant)));
         assertEquals(1, ex.violations().size());
     }
 
@@ -110,7 +116,7 @@ class GraphInvariantEngineTest {
     void imperativePasses() {
         var graph = factory.of(List.of(), List.of());
         var invariant = imperativeInvariant("checkAlwaysPasses");
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> validate(graph, List.of(invariant)));
     }
 
     // --- empty invariant list ---
@@ -118,7 +124,7 @@ class GraphInvariantEngineTest {
     @Test
     void emptyInvariantListNoException() {
         var graph = factory.of(List.of(), List.of());
-        assertDoesNotThrow(() -> engine.validate(graph, List.of()));
+        assertDoesNotThrow(() -> validate(graph, List.of()));
     }
 
     // --- multiple violations collected ---
@@ -137,7 +143,7 @@ class GraphInvariantEngineTest {
                         new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "data-source", "sink", Direction.DEPENDENCIES)));
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                () -> engine.validate(graph, List.of(invariant)));
+                () -> validate(graph, List.of(invariant)));
         assertEquals(2, ex.violations().size());
     }
 
@@ -162,7 +168,7 @@ class GraphInvariantEngineTest {
                                                                                       Direction.DEPENDENTS, 2, -1)));
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                              () -> engine.validate(graph, List.of(invariant)));
+                              () -> validate(graph, List.of(invariant)));
         assertEquals(1, ex.violations().size());
         assertTrue(ex.violations().get(0).message().contains("at least 2"));
     }
@@ -186,7 +192,7 @@ class GraphInvariantEngineTest {
                                                        new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "target", "lb",
                                                                                       Direction.DEPENDENTS, 2, -1)));
 
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> validate(graph, List.of(invariant)));
     }
 
     @Test
@@ -207,7 +213,7 @@ class GraphInvariantEngineTest {
                                                                                       Direction.DEPENDENCIES, -1, 1)));
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                              () -> engine.validate(graph, List.of(invariant)));
+                              () -> validate(graph, List.of(invariant)));
         assertEquals(1, ex.violations().size());
         assertTrue(ex.violations().get(0).message().contains("at most 1"));
     }
@@ -228,7 +234,7 @@ class GraphInvariantEngineTest {
                                                        PatternKind.MATCH, "compute", "", Direction.DEPENDENCIES, 3, -1)));
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                              () -> engine.validate(graph, List.of(invariant)));
+                              () -> validate(graph, List.of(invariant)));
         assertEquals(1, ex.violations().size());
         assertTrue(ex.violations().get(0).message().contains("at least 3"));
         assertTrue(ex.violations().get(0).message().contains("found 2"));
@@ -247,7 +253,7 @@ class GraphInvariantEngineTest {
                                                List.of(new PatternParameterDescriptor(
                                                        PatternKind.MATCH, "compute", "", Direction.DEPENDENCIES, 3, -1)));
 
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> validate(graph, List.of(invariant)));
     }
 
     @Test
@@ -263,7 +269,7 @@ class GraphInvariantEngineTest {
                                                        PatternKind.MATCH, "control-plane", "", Direction.DEPENDENCIES, 1, 1)));
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                              () -> engine.validate(graph, List.of(invariant)));
+                              () -> validate(graph, List.of(invariant)));
         assertEquals(1, ex.violations().size());
         assertTrue(ex.violations().get(0).message().contains("at most 1"));
     }
@@ -278,7 +284,7 @@ class GraphInvariantEngineTest {
                                                List.of(new PatternParameterDescriptor(
                                                        PatternKind.MATCH, "control-plane", "", Direction.DEPENDENCIES, 1, 1)));
 
-        assertDoesNotThrow(() -> engine.validate(graph, List.of(invariant)));
+        assertDoesNotThrow(() -> validate(graph, List.of(invariant)));
     }
 
     @Test
@@ -290,30 +296,41 @@ class GraphInvariantEngineTest {
                                                        PatternKind.MATCH, "control-plane", "", Direction.DEPENDENCIES, 1, 1)));
 
         var ex = assertThrows(GraphInvariantViolationsException.class,
-                              () -> engine.validate(graph, List.of(invariant)));
+                              () -> validate(graph, List.of(invariant)));
         assertEquals(1, ex.violations().size());
         assertTrue(ex.violations().get(0).message().contains("at least 1"));
     }
 
-    private ResolvedInvariant parameterizedInvariant(String methodName,
-            List<PatternParameterDescriptor> patterns) {
+    private ResolvedInvariant<DesiredNode> parameterizedInvariant(String methodName,
+                                                                  List<PatternParameterDescriptor> patterns) {
         try {
             Class<?>[] paramTypes = new Class<?>[patterns.size()];
             for (int i = 0; i < patterns.size(); i++) {
                 paramTypes[i] = patterns.get(i).kind() == PatternKind.NOT_EXISTS
-                        ? Void.class : DesiredNode.class;
+                                ? Void.class : DesiredNode.class;
             }
             Method method = getClass().getMethod(methodName, paramTypes);
-            return new ResolvedInvariant.ParameterizedReflectiveInvariant(methodName, method, null, patterns);
+            return new ResolvedInvariant.ParameterizedReflectiveInvariant<>(methodName, method, null, patterns);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    private ResolvedInvariant imperativeInvariant(String methodName) {
+    private ResolvedInvariant<DesiredNode> imperativeInvariant(String methodName) {
         try {
             Method method = getClass().getMethod(methodName, DesiredStateGraph.class);
-            return new ResolvedInvariant.ImperativeInvariant(methodName, method, null);
+            return new ResolvedInvariant.ImperativeInvariant<>(methodName, view -> {
+                try {
+                    DesiredStateGraph graph = ((DesiredStateGraphView) view).graph();
+                    method.invoke(null, graph);
+                } catch (java.lang.reflect.InvocationTargetException e) {
+                    if (e.getCause() instanceof GraphViolationException gve) {throw gve;}
+                    if (e.getCause() instanceof RuntimeException re) {throw re;}
+                    throw new RuntimeException(e.getCause());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

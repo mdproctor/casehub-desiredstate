@@ -5,9 +5,9 @@ import java.util.stream.Collectors;
 
 public class GraphRuleNonConvergenceException extends RuntimeException {
     private final List<String> activeRuleNames;
-    private final int maxIterations;
+    private final int          maxIterations;
 
-    public GraphRuleNonConvergenceException(List<ResolvedRule> activeRules, int maxIterations) {
+    public GraphRuleNonConvergenceException(List<? extends ResolvedRule<?>> activeRules, int maxIterations) {
         super("Graph rules did not converge after " + maxIterations + " iterations. "
               + "Rules still producing mutations: "
               + activeRules.stream().map(ResolvedRule::name).collect(Collectors.joining(", "))
@@ -18,6 +18,7 @@ public class GraphRuleNonConvergenceException extends RuntimeException {
         this.maxIterations   = maxIterations;
     }
 
-    public List<String> getActiveRuleNames() { return activeRuleNames; }
-    public int getMaxIterations() { return maxIterations; }
+    public List<String> getActiveRuleNames() {return activeRuleNames;}
+
+    public int getMaxIterations()            {return maxIterations;}
 }

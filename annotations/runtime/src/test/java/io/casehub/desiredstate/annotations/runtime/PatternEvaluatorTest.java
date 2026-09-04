@@ -18,6 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PatternEvaluatorTest {
 
     private final DefaultDesiredStateGraphFactory factory = new DefaultDesiredStateGraphFactory();
+    private final DesiredStateGraphAdapter        adapter = new DesiredStateGraphAdapter();
+
 
     record Spec(String name, String typeValue) implements NodeSpec {
         @Override
@@ -37,7 +39,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.MATCH, "sink", "", Direction.DEPENDENCIES));
         String[] bindingNames = {"sink"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).hasSize(2);
         assertThat(bindings).allSatisfy(b ->
@@ -57,7 +59,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "data-source", "sink", Direction.DEPENDENCIES));
         String[] bindingNames = {"sink", "upstream"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).hasSize(1);
         assertThat(bindings.get(0).get("sink").id()).isEqualTo(NodeId.of("sink-1"));
@@ -76,7 +78,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "data-source", "sink", Direction.DEPENDENCIES));
         String[] bindingNames = {"sink", "upstream"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).isEmpty();
     }
@@ -94,7 +96,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "monitor", "sink", Direction.DEPENDENTS));
         String[] bindingNames = {"sink", "guard"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).isEmpty();
     }
@@ -111,7 +113,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "monitor", "sink", Direction.DEPENDENTS));
         String[] bindingNames = {"sink", "guard"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).hasSize(1);
         assertThat(bindings.get(0)).containsKey("sink");
@@ -131,7 +133,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "validator", "", Direction.DEPENDENCIES));
         String[] bindingNames = {"tx", "guard"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).isEmpty();
     }
@@ -148,7 +150,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.NOT_EXISTS, "validator", "", Direction.DEPENDENCIES));
         String[] bindingNames = {"tx", "guard"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).hasSize(1);
     }
@@ -168,7 +170,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.REACHES, "source", "", Direction.DEPENDENCIES));
         String[] bindingNames = {"tx", "src"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).hasSize(1);
         assertThat(bindings.get(0).get("src").id()).isEqualTo(NodeId.of("src"));
@@ -188,7 +190,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.MATCH, "source", "", Direction.DEPENDENCIES));
         String[] bindingNames = {"tx", "src"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).hasSize(2);
     }
@@ -204,7 +206,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.MATCH, "sink", "", Direction.DEPENDENCIES));
         String[] bindingNames = {"sink"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).isEmpty();
     }
@@ -224,7 +226,7 @@ class PatternEvaluatorTest {
                 new PatternParameterDescriptor(PatternKind.DIRECT_DEP, "*", "a", Direction.DEPENDENCIES));
         String[] bindingNames = {"a", "dep"};
 
-        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(graph, patterns, bindingNames);
+        List<Map<String, DesiredNode>> bindings = PatternEvaluator.evaluate(new DesiredStateGraphView(graph, adapter), patterns, bindingNames);
 
         assertThat(bindings).hasSize(2);
     }

@@ -5,10 +5,10 @@ import java.util.Objects;
 import java.util.Set;
 
 public record CbrProposal(
-    String sourceId,
-    CbrPath path,
-    Set<NodeId> affectedNodeIds,
-    Instant timestamp
+        String sourceId,
+        CbrPath path,
+        Set<String> affectedNodeIds,
+        Instant timestamp
 ) {
     public CbrProposal {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
