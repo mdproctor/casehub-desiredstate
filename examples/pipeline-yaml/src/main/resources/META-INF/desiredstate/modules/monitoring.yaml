@@ -4,9 +4,14 @@ module:
     watched_node_id:
       type: string
       required: true
+      minLength: 1
+      pattern: "^[a-z][a-z0-9-]*$"
+      constraintDescription: "Node ID: lowercase alphanumeric with hyphens, starting with a letter"
     alert_email:
       type: string
       default: "ops@example.com"
+      pattern: "^[^@]+@[^@]+\\.[^@]+$"
+      constraintDescription: "Must be a valid email address"
 
 nodes:
   monitor:
