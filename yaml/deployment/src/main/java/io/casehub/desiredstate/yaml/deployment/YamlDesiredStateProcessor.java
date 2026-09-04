@@ -276,6 +276,29 @@ public class YamlDesiredStateProcessor {
                         }
                     }
                 }
+            } else if ("jar".equals(dirUrl.getProtocol())) {
+                String urlStr = dirUrl.toString();
+                int bangIdx = urlStr.indexOf("!/");
+                String filePath = urlStr.substring("jar:file:".length(), bangIdx);
+                try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(filePath)) {
+                    java.util.Enumeration<java.util.jar.JarEntry> entries = jarFile.entries();
+                    while (entries.hasMoreElements()) {
+                        java.util.jar.JarEntry entry = entries.nextElement();
+                        String entryName = entry.getName();
+                        if (entryName.startsWith(prefix) && !entry.isDirectory()
+                            && (entryName.endsWith(".yaml") || entryName.endsWith(".yml"))) {
+                            String fileName = entryName.substring(prefix.length());
+                            if (!fileName.contains("/") && seen.add(fileName)) {
+                                try (InputStream is = jarFile.getInputStream(entry)) {
+                                    io.casehub.yaml.core.module.YamlModuleFile moduleFile =
+                                            moduleMapper.readValue(is,
+                                                    io.casehub.yaml.core.module.YamlModuleFile.class);
+                                    moduleFiles.add(moduleFile);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         return io.casehub.yaml.core.module.ModuleExpander.resolveExtensions(moduleFiles);
