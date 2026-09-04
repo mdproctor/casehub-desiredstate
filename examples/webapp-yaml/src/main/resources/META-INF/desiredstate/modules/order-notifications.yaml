@@ -1,34 +1,17 @@
-# ============================================================================
-# Reusable Module: Order Notifications
-# ============================================================================
-#
-# A module is a reusable building block. This one adds email and SMS
-# notifications for any order step you point it at.
-#
-# To use it, import it in your graph with an alias and tell it which
-# node to watch:
-#
-#   imports:
-#     - module: order-notifications
-#       as: shipping-alerts
-#       parameters:
-#         watched_step: shipping
-#
-# The module creates two notification nodes (email + SMS) that depend
-# on the watched step. The alias prefixes all node IDs to avoid
-# collisions — so you can import the same module multiple times for
-# different order steps.
-# ============================================================================
-
 module:
   name: order-notifications
   parameters:
     watched_step:
       type: string
       required: true
+      minLength: 1
+      pattern: "^[a-z][a-z0-9-]*$"
+      constraintDescription: "Node ID of the order step to watch"
     email_template:
       type: string
       default: "standard"
+      pattern: "^[a-z][a-z0-9-]*$"
+      constraintDescription: "Template name: lowercase alphanumeric with hyphens"
 
 nodes:
   email:
