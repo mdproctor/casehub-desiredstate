@@ -58,7 +58,7 @@ public class YamlGraphRecorder {
             Map<String, String> inlineVariables,
             List<ResolvedInvariant> invariants,
             io.casehub.desiredstate.yaml.model.YamlGraph yamlGraph,
-            Map<String, io.casehub.desiredstate.yaml.model.YamlModule> availableModules) {
+            Map<String, io.casehub.yaml.core.module.YamlModule> availableModules) {
         return createYamlGoalCompiler(descriptor, typeRegistryMap, inlineVariables,
                 invariants, yamlGraph, availableModules, List.of(), List.of());
     }
@@ -70,7 +70,7 @@ public class YamlGraphRecorder {
             Map<String, String> inlineVariables,
             List<ResolvedInvariant> invariants,
             io.casehub.desiredstate.yaml.model.YamlGraph yamlGraph,
-            Map<String, io.casehub.desiredstate.yaml.model.YamlModule> availableModules,
+            Map<String, io.casehub.yaml.core.module.YamlModule> availableModules,
             List<io.casehub.desiredstate.annotations.runtime.GraphRuleDescriptor> crossSurfaceRuleDescriptors,
             List<io.casehub.desiredstate.annotations.runtime.GraphInvariantDescriptor> crossSurfaceInvariantDescriptors) {
 
@@ -89,12 +89,16 @@ public class YamlGraphRecorder {
             Map<String, io.casehub.desiredstate.yaml.model.YamlInvariant> promotedInvariants = Map.of();
 
             if (yamlGraph != null && !yamlGraph.imports().isEmpty() && availableModules != null) {
-                ModuleExpander.ExpandedGraph moduleExpanded = ModuleExpander.expand(
-                        yamlGraph.imports(), availableModules, effectiveNodes);
-                effectiveNodes = moduleExpanded.expandedNodes();
+                DesiredStateModuleBridge bridge = new DesiredStateModuleBridge(mapper);
+                DesiredStateModuleContent existingContent = new DesiredStateModuleContent(
+                        effectiveNodes, Map.of(), Map.of());
+                io.casehub.yaml.core.module.TypedExpandedModule<DesiredStateModuleContent> moduleExpanded =
+                        io.casehub.yaml.core.module.ModuleExpander.expand(
+                                yamlGraph.imports(), availableModules, existingContent, bridge);
+                effectiveNodes = moduleExpanded.content().nodes();
                 moduleScopes = moduleExpanded.moduleScopes();
-                promotedRules = moduleExpanded.promotedRules();
-                promotedInvariants = moduleExpanded.promotedInvariants();
+                promotedRules = moduleExpanded.content().rules();
+                promotedInvariants = moduleExpanded.content().invariants();
             }
 
             boolean hasForEach = effectiveNodes.values().stream()

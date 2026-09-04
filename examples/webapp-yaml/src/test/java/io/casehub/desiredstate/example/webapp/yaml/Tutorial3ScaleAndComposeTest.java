@@ -13,8 +13,9 @@ import io.casehub.desiredstate.runtime.DefaultDesiredStateGraphFactory;
 import io.casehub.desiredstate.yaml.YamlGraphRecorder;
 import io.casehub.desiredstate.yaml.YamlInvariantConverter;
 import io.casehub.desiredstate.yaml.model.YamlGraph;
-import io.casehub.desiredstate.yaml.model.YamlModule;
-import io.casehub.desiredstate.yaml.model.YamlModuleFile;
+import io.casehub.yaml.core.module.YamlModule;
+import io.casehub.yaml.core.module.YamlModuleFile;
+import io.casehub.yaml.jackson.YamlCoreJacksonModule;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -43,7 +44,8 @@ class Tutorial3ScaleAndComposeTest {
     @BeforeAll
     @SuppressWarnings("unchecked")
     static void loadYaml() throws Exception {
-        ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+        ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory()).findAndRegisterModules();
+        yamlMapper.registerModule(new YamlCoreJacksonModule());
 
         Map<String, YamlModule> modules = new HashMap<>();
         try (InputStream modIs = Tutorial3ScaleAndComposeTest.class.getClassLoader()

@@ -1,6 +1,7 @@
 package io.casehub.desiredstate.yaml.model;
 
 import io.casehub.yaml.core.foreach.IterationGroup;
+import io.casehub.yaml.core.module.YamlImport;
 
 import java.util.List;
 import java.util.Map;
