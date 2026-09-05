@@ -67,7 +67,7 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `ts-dsl/deployment/` | `casehub-desiredstate-ts-deployment` | `io.casehub.desiredstate.ts.deployment` | Quarkus build extension: classpath discovery of `.ts`/`.ds.json` files at `META-INF/desiredstate/`, `@NodeTypeId` registry scan, build-time validation, `GoalCompiler<Void>` bean registration. Consumes `AdditionalRulesBuildItem` for cross-surface rule delivery. |
 | `ts-dsl/sdk/` | npm: `@casehub/desiredstate` | — | TypeScript SDK — `defineGraph()`, `defineLifecycle()`, `node()` helper with `NodeTypeMap` discriminated union for spec autocomplete. Envelope transformation (nodes map→array, dependsOn→dependencies). |
 | `examples/pipeline-ts/` | `casehub-desiredstate-example-pipeline-ts` | `io.casehub.desiredstate.example.pipeline.ts` | Pipeline TypeScript — TS-declared medallion pipeline with cross-surface `@GraphRule` monitoring. Side-by-side companion to `examples/pipeline-yaml/`. |
-| `persistence-jpa/` | `casehub-desiredstate-persistence-jpa` | `io.casehub.desiredstate.persistence.jpa` | JPA-backed FaultCountStore — durable fault counts across restarts. Tier 2 in CDI priority ladder. Flyway migration at `db/desiredstate/migration/`. |
+| `persistence-jpa/` | `casehub-desiredstate-persistence-jpa` | `io.casehub.desiredstate.persistence.jpa` | JPA-backed FaultCountStore — durable fault counts across restarts. JPA-backed ReconciliationStateStore — durable graph snapshots for orphan spec resolution across restarts. Tier 2 in CDI priority ladder. Flyway migration at `db/desiredstate/migration/`. |
 | `ras-adapter/` | `casehub-desiredstate-ras` | `io.casehub.desiredstate.ras` | RAS bridge — Ganglia for reconciliation patterns, situation definitions, correlation key extraction for zone-level aggregate detection. |
 
 ## Core SPIs (api/)
@@ -144,6 +144,8 @@ mvn --batch-mode deploy -DskipTests   # CI only — requires GITHUB_TOKEN
 | `FaultCountEvictionListener` | `@ApplicationScoped` GlobalReconciliationListener — calls `evictAcrossNamespaces` after each cycle and on tenant stop. CDI-discovered. No namespace registry needed |
 | `JpaFaultCountStore` | `@ApplicationScoped` (persistence-jpa/) — JPA-backed FaultCountStore. Portable SQL (H2 MODE=PostgreSQL + PostgreSQL). Flyway migration V1 at `db/desiredstate/migration/` |
 | `FaultCountEntity` | JPA entity for `ds_fault_count` table — composite key `(namespace, tenancy_id, node_id)`, count field. `@IdClass(Key.class)` |
+| `JpaReconciliationStateStore` | `@ApplicationScoped` (persistence-jpa/) — JPA-backed ReconciliationStateStore. Stores serialized `DesiredStateGraph` as JSON per tenant via `GraphSerializer` (FQCN discriminator for polymorphic `NodeSpec`). Flyway migration V2 at `db/desiredstate/migration/` |
+| `ReconciliationStateEntity` | JPA entity for `ds_reconciliation_state` table — `tenancy_id` PK, `graph_json` TEXT, `updated_at` TIMESTAMP |
 | `DefaultMergedEventSource` | Runtime implementation of MergedEventSource — merges multiple EventSource streams with per-stream error isolation |
 | `CdiMergedEventSource` | CDI-wired subclass injecting `Instance<EventSource>` |
 | `DesiredStatePreferenceKeys` | Preference key definitions — `RESYNC_INTERVAL` with per-NodeType sub-key support, `CBR_MIN_RETRIEVAL_CONFIDENCE`, `CBR_MIN_ADAPTATION_CONFIDENCE`, `CBR_MAX_CANDIDATES` |
