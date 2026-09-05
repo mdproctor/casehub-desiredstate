@@ -216,11 +216,10 @@ Optional<DesiredStateGraph> load(String tenancyId);
 void remove(String tenancyId);
 ```
 
-Two tiers (CDI priority ladder: durable store > in-memory default):
+Three tiers (CDI priority ladder: JPA store > in-memory default):
 - `InMemoryReconciliationStateStore` (API module) -- `ConcurrentHashMap` with `tenancyId` key. Thread-safe. Lost on restart.
 - `DefaultReconciliationStateStore` (runtime module) -- `@DefaultBean @ApplicationScoped` CDI fallback wrapping `InMemoryReconciliationStateStore`.
-
-For durable orphan resolution across restarts, provide a custom `ReconciliationStateStore` implementation (e.g. JPA-backed) that serializes and restores the `DesiredStateGraph`.
+- `JpaReconciliationStateStore` (persistence-jpa module) -- `@ApplicationScoped` JPA-backed store. Serializes the full `DesiredStateGraph` as JSON per tenant. Classpath-activated -- add `casehub-desiredstate-persistence-jpa` as a dependency to enable durable orphan resolution across restarts.
 
 ### SituationRecompiler
 
