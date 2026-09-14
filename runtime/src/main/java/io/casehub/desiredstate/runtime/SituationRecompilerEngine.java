@@ -34,4 +34,17 @@ public class SituationRecompilerEngine {
         }
         return Optional.empty();
     }
+
+    public Optional<CompilationResult> situationResolved(
+            String tenancyId, String situationId,
+            DesiredStateGraph current, ActualState actual,
+            DesiredStateGraphFactory factory) {
+        for (SituationRecompiler recompiler : recompilers) {
+            Optional<CompilationResult> result = recompiler.situationResolved(
+                    tenancyId, situationId, current, actual, factory);
+            if (result.isPresent()) {return result;}
+        }
+        return Optional.empty();
+    }
+
 }
