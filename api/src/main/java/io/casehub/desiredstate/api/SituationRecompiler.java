@@ -29,4 +29,14 @@ public interface SituationRecompiler {
             DesiredStateGraphFactory factory);
 
     default int priority() { return 0; }
+
+    default Optional<CompilationResult> situationResolved(
+            String tenancyId,
+            String situationId,
+            DesiredStateGraph currentGraph,
+            ActualState actualState,
+            DesiredStateGraphFactory factory) {
+        return Optional.empty();
+    }
+
 }
