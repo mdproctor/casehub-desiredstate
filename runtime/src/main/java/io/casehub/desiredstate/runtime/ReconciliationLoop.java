@@ -330,6 +330,11 @@ public class ReconciliationLoop {
         return loop.desiredRef.get();
     }
 
+    public java.util.Set<String> tenantIds() {
+        return java.util.Set.copyOf(loops.keySet());
+    }
+
+
     @PreDestroy
     public void shutdown() {
         for (String tenancyId : loops.keySet()) {
