@@ -7,7 +7,10 @@ import io.casehub.desiredstate.api.DesiredStateGraphFactory;
 import io.casehub.ras.api.ActiveSituation;
 import io.casehub.ras.api.SituationChangeEvent;
 import io.casehub.ras.api.SituationContext;
+import io.casehub.ras.api.SituationSource;
+import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.ObservesAsync;
 import jakarta.inject.Inject;
 
@@ -24,13 +27,35 @@ public class SituationRecompilerDispatch {
     @Inject ReconciliationLoop reconciliationLoop;
     @Inject ActualStateAdapterRouter actualStateRouter;
     @Inject DesiredStateGraphFactory graphFactory;
+    @Inject SituationSource situationSource;
+
+    void onColdStart(@Observes StartupEvent ev) {
+        for (String tenancyId : reconciliationLoop.tenantIds()) {
+            var activeSituations = situationSource.activeSituations(tenancyId);
+            if (activeSituations.isEmpty()) {
+                continue;
+            }
+            DesiredStateGraph current = reconciliationLoop.getDesired(tenancyId);
+            var actual = actualStateRouter.readActual(current, tenancyId);
+            for (ActiveSituation situation : activeSituations) {
+                var result = engine.recompile(tenancyId, current, actual, situation, graphFactory);
+                if (result.isPresent()) {
+                    applyResult(tenancyId, result);
+                    current = reconciliationLoop.getDesired(tenancyId);
+                    actual = actualStateRouter.readActual(current, tenancyId);
+                }
+            }
+            LOG.info("Cold-start recovery: processed " + activeSituations.size()
+                    + " active situation(s) for tenant " + tenancyId);
+        }
+    }
 
     void onSituationChange(@ObservesAsync SituationChangeEvent event) {
         String tenancyId = event.tenancyId();
-        DesiredStateGraph currentGraph = reconciliationLoop.getDesired(tenancyId);
-        if (currentGraph == null) {
+        if (!reconciliationLoop.tenantIds().contains(tenancyId)) {
             return;
         }
+        DesiredStateGraph currentGraph = reconciliationLoop.getDesired(tenancyId);
 
         var actual = actualStateRouter.readActual(currentGraph, tenancyId);
 
