@@ -1,7 +1,7 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.CbrEventTypes;
-import io.casehub.desiredstate.api.CbrPath;
+import io.casehub.neocortex.memory.cbr.CbrEventTypes;
+import io.casehub.neocortex.memory.cbr.CbrPath;
 import io.casehub.desiredstate.api.CbrProposal;
 import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.DesiredStateGraph;

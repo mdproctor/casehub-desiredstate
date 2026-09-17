@@ -1,5 +1,7 @@
 package io.casehub.desiredstate.api;
 
+import io.casehub.neocortex.memory.cbr.CbrPath;
+
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;

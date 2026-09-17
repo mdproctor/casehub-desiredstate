@@ -1,6 +1,6 @@
 package io.casehub.desiredstate.runtime;
 
-import io.casehub.desiredstate.api.CbrOutcomeData;
+import io.casehub.neocortex.memory.cbr.CbrOutcomeData;
 import io.casehub.desiredstate.api.CbrProposal;
 import io.casehub.desiredstate.api.DesiredStateGraph;
 import io.casehub.desiredstate.api.NodeId;

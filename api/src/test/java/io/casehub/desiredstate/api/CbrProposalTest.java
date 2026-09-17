@@ -1,5 +1,6 @@
 package io.casehub.desiredstate.api;
 
+import io.casehub.neocortex.memory.cbr.CbrPath;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

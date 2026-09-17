@@ -2,7 +2,7 @@ package io.casehub.desiredstate.runtime;
 
 import io.casehub.desiredstate.api.ActualState;
 import io.casehub.desiredstate.api.AdaptedConfiguration;
-import io.casehub.desiredstate.api.CbrPath;
+import io.casehub.neocortex.memory.cbr.CbrPath;
 import io.casehub.desiredstate.api.CompilationResult;
 import io.casehub.desiredstate.api.ConfigurationRetriever;
 import io.casehub.desiredstate.api.DesiredNode;

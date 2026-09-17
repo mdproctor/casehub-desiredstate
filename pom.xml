@@ -58,6 +58,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- neocortex CBR types (CbrPath, CbrOutcomeData, CbrEventTypes) -->
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-neocortex-memory-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- casehub-desiredstate inter-module -->
             <dependency>
                 <groupId>io.casehub</groupId>
