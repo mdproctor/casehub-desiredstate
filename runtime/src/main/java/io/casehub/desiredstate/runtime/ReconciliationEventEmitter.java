@@ -2,8 +2,8 @@ package io.casehub.desiredstate.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import io.casehub.desiredstate.api.CbrEventTypes;
-import io.casehub.desiredstate.api.CbrOutcomeData;
+import io.casehub.neocortex.memory.cbr.CbrEventTypes;
+import io.casehub.neocortex.memory.cbr.CbrOutcomeData;
 import io.casehub.desiredstate.api.DesiredStateEventTypes;
 import io.casehub.desiredstate.api.NodeDriftedData;
 import io.casehub.desiredstate.api.NodeFaultedData;

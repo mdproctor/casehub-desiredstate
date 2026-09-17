@@ -2,7 +2,7 @@ package io.casehub.desiredstate.runtime;
 
 import io.casehub.desiredstate.api.ActualState;
 import io.casehub.desiredstate.api.ActualStateAdapterRouter;
-import io.casehub.desiredstate.api.CbrOutcomeData;
+import io.casehub.neocortex.memory.cbr.CbrOutcomeData;
 import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.DesiredStateGraph;
 import io.casehub.desiredstate.api.FaultEvent;
