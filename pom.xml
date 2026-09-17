@@ -42,6 +42,7 @@
         <module>examples/webapp-annotated</module>
         <module>examples/webapp-yaml</module>
         <module>examples/pipeline-ts</module>
+        <module>eidos</module>
     </modules>
 
     <properties>
@@ -62,6 +63,13 @@
             <dependency>
                 <groupId>io.casehub</groupId>
                 <artifactId>casehub-neocortex-memory-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- eidos org model API for GoalCompiler integration -->
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-eidos-org-api</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
