@@ -7,7 +7,6 @@ import io.casehub.desiredstate.annotations.runtime.ResolvedRule;
 import io.casehub.desiredstate.api.Dependency;
 import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.DesiredStateGraph;
-import io.casehub.desiredstate.api.GraphMutation;
 import io.casehub.desiredstate.api.HumanGating;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.NodeSpec;
@@ -148,4 +147,27 @@ class YamlRuleConverterTest {
         var result = ((io.casehub.desiredstate.annotations.runtime.DesiredStateGraphView) evaluated).graph();
         assertThat(result.nodes()).isEmpty();
     }
+
+    @Test
+    void toDeclarativeRule_invalidMatchReference_throwsAtCompileTime() {
+        YamlRule yamlRule = new YamlRule(
+                List.of(),
+                Map.of("sink", new YamlPattern("sink", null, Direction.DEPENDENCIES)),
+                Map.of(), Map.of(), Map.of(),
+                List.of(Map.of("addNode", Map.of(
+                        "id", "monitor-${match.snk.id}",
+                        "type", "monitor",
+                        "spec", Map.of("target", "${match.snk.id}")))));
+
+        NodeSpecRegistry registry = NodeSpecRegistry.of(TYPE_REGISTRY);
+        VariableResolver resolver = new VariableResolver(Map.of("var", (VariableSource) Map.<String, String>of()::get), Set.of("match", "fault"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                                                                   YamlRuleConverter.toDeclarativeRule("bad-ref-rule", yamlRule, resolver, registry))
+                                       .isInstanceOf(IllegalArgumentException.class)
+                                       .hasMessageContaining("snk")
+                                       .hasMessageContaining("bad-ref-rule")
+                                       .hasMessageContaining("sink");
+    }
+
 }

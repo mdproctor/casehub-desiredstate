@@ -82,9 +82,8 @@ class YamlConditionalEvaluationTest {
                                 List.of((Object) Map.of("node", "src", "optional", true)), null, "${var.mode}", null, null, null)));
 
         assertThatThrownBy(() -> compile(yamlGraph))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("production")
-                .hasMessageContaining("not a boolean");
+                .isInstanceOf(io.casehub.yaml.core.condition.ConditionEvaluationException.class)
+                .hasMessageContaining("production");
     }
 
     @Test
