@@ -85,4 +85,4 @@ public class YamlNodeForEachAdapter implements ForEachAdapter<YamlNode> {
         return optional ? Map.of("node", resolvedId, "optional", true) : resolvedId;
     }
 
-    }
+}

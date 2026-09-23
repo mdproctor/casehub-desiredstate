@@ -14,7 +14,7 @@ import io.casehub.desiredstate.api.GoalCompiler;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.NodeSpec;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
-import io.casehub.yaml.core.condition.Truthiness;
+import io.casehub.yaml.core.condition.ConditionEvaluator;
 import io.casehub.yaml.core.resolver.VariableResolver;
 import io.casehub.yaml.core.resolver.VariableSource;
 import io.quarkus.runtime.RuntimeValue;
@@ -31,6 +31,7 @@ import java.util.Set;
 public class YamlGraphRecorder {
 
     private static final Logger LOG = Logger.getLogger(YamlGraphRecorder.class);
+    private static final ConditionEvaluator CONDITION = new ConditionEvaluator(null);
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     public RuntimeValue<GoalCompiler> createYamlGoalCompiler(
@@ -140,7 +141,7 @@ public class YamlGraphRecorder {
                         io.casehub.desiredstate.yaml.model.YamlNode yamlNode = entry.getValue();
                         if (yamlNode.when() != null) {
                             String resolved = resolver.resolveString(yamlNode.when(), nodeId);
-                            if (!Truthiness.isTruthy(resolved)) {
+                            if (!CONDITION.evaluate(resolved)) {
                                 excludedNodeIds.add(nodeId);
                             }
                         }
@@ -325,7 +326,7 @@ public class YamlGraphRecorder {
 
                         if (yamlNode.when() != null) {
                             String resolved = resolver.resolveString(yamlNode.when(), nodeId);
-                            if (!Truthiness.isTruthy(resolved)) {
+                            if (!CONDITION.evaluate(resolved)) {
                                 excludedNodeIds.add(nodeId);
                                 continue;
                             }

@@ -8,7 +8,6 @@ import io.casehub.desiredstate.annotations.runtime.MatchTemplateResolver;
 import io.casehub.desiredstate.annotations.runtime.PatternKind;
 import io.casehub.desiredstate.annotations.runtime.PatternParameterDescriptor;
 import io.casehub.desiredstate.annotations.runtime.ResolvedRule;
-import io.casehub.desiredstate.api.Dependency;
 import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.GraphMutation;
 import io.casehub.desiredstate.api.HumanGating;
@@ -23,6 +22,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class YamlRuleConverter {
 
@@ -32,8 +32,8 @@ public final class YamlRuleConverter {
             String name, YamlRule yamlRule,
             VariableResolver resolver, NodeSpecRegistry registry) {
 
-        List<PatternParameterDescriptor> patterns = new ArrayList<>();
-        List<String> bindingNamesList = new ArrayList<>();
+        List<PatternParameterDescriptor> patterns         = new ArrayList<>();
+        List<String>                     bindingNamesList = new ArrayList<>();
 
         for (Map.Entry<String, YamlPattern> entry : yamlRule.match().entrySet()) {
             YamlPattern p = entry.getValue();
@@ -49,17 +49,37 @@ public final class YamlRuleConverter {
 
         String[] bindingNames = bindingNamesList.toArray(String[]::new);
 
+        Set<String> allBindings        = new java.util.LinkedHashSet<>(bindingNamesList);
+        Set<String> referencedBindings = new java.util.LinkedHashSet<>();
+        io.casehub.yaml.core.resolver.DeferredPrefixHandler handler = (prefix, key, context) -> {
+            if ("match".equals(prefix)) {
+                String remainder   = key.substring("match.".length());
+                int    dot         = remainder.indexOf('.');
+                String bindingName = dot >= 0 ? remainder.substring(0, dot) : remainder;
+                referencedBindings.add(bindingName);
+            }
+        };
+        VariableResolver validatingResolver = resolver.withDeferredPrefixHandler(handler);
+
         List<Map<String, Object>> resolvedActions = new ArrayList<>();
         for (Map<String, Object> action : yamlRule.actions()) {
-            resolvedActions.add(resolveVarInAction(action, resolver, name));
+            resolvedActions.add(resolveVarInAction(action, validatingResolver, name));
+        }
+
+        for (String ref : referencedBindings) {
+            if (!allBindings.contains(ref)) {
+                throw new IllegalArgumentException(
+                        "Rule '" + name + "': action references ${match." + ref
+                        + ".*} but no binding '" + ref + "' exists. Available: " + allBindings);
+            }
         }
 
         ObjectMapper coercionMapper = createCoercionMapper();
 
         return new ResolvedRule.DeclarativeRule<>(name, patterns, bindingNames,
-                (java.util.Map<String, io.casehub.desiredstate.api.DesiredNode> bindings) ->
-                        evaluateActions(resolvedActions, bindings, registry,
-                                coercionMapper, name));
+                                                  (java.util.Map<String, io.casehub.desiredstate.api.DesiredNode> bindings) ->
+                                                          evaluateActions(resolvedActions, bindings, registry,
+                                                                          coercionMapper, name));
     }
 
     @SuppressWarnings("unchecked")
@@ -175,7 +195,7 @@ public final class YamlRuleConverter {
         Map<String, Object> result = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             Object val = entry.getValue();
-            if (val instanceof String s && s.contains("${var.")) {
+            if (val instanceof String s && s.contains("${")) {
                 result.put(entry.getKey(), resolver.resolveString(s, context));
             } else if (val instanceof Map<?, ?> nested) {
                 result.put(entry.getKey(),
