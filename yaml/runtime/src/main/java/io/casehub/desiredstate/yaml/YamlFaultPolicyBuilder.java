@@ -18,11 +18,13 @@ import io.casehub.desiredstate.api.TypedFaultPolicy;
 import io.casehub.desiredstate.yaml.model.YamlFaultPolicy;
 import io.casehub.desiredstate.yaml.model.YamlFaultTier;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
+import io.casehub.yaml.core.resolver.VariableResolver;
+import io.casehub.yaml.core.resolver.VariableSource;
 import org.jboss.logging.Logger;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class YamlFaultPolicyBuilder {
@@ -82,51 +84,34 @@ public class YamlFaultPolicyBuilder {
 
             @Override
             public List<GraphMutation<DesiredNode>> onFault(String tenancyId, FaultEvent event,
-                    io.casehub.desiredstate.api.DesiredStateGraph current,
-                    io.casehub.desiredstate.api.ActualState actual) {
+                                                            io.casehub.desiredstate.api.DesiredStateGraph current,
+                                                            io.casehub.desiredstate.api.ActualState actual) {
 
                 NodeId reviewId = NodeId.of(outputType.value() + "-" + event.node().value());
                 if (current.nodes().containsKey(reviewId)) {
                     return List.of();
                 }
 
-                Map<String, Object> resolved = resolveFaultTemplate(specTemplate, event);
+                VariableSource faultSource = name -> switch (name) {
+                    case "nodeId" -> event.node().value();
+                    case "type" -> event.type().name();
+                    case "detail" -> event.detail() != null ? event.detail() : "";
+                    default -> null;
+                };
+                VariableResolver    resolver = new VariableResolver(Map.of("fault", faultSource), Set.of());
+                Map<String, Object> resolved = resolver.resolveMap(specTemplate, "fault-policy-" + event.node().value());
+
                 try {
-                    NodeSpec spec = coercionMapper.convertValue(resolved, specClass);
+                    NodeSpec    spec = coercionMapper.convertValue(resolved, specClass);
                     DesiredNode node = new DesiredNode(reviewId, spec, gating);
                     return GraphMutations.addNodeDependingOn(node, event.node());
                 } catch (IllegalArgumentException e) {
                     LOG.warnf("Fault policy template deserialization failed for type '%s': %s",
-                            outputType.value(), e.getMessage());
+                              outputType.value(), e.getMessage());
                     return List.of();
                 }
             }
         };
-    }
-
-    private static Map<String, Object> resolveFaultTemplate(
-            Map<String, Object> template, FaultEvent event) {
-        Map<String, Object> resolved = new LinkedHashMap<>();
-        for (var entry : template.entrySet()) {
-            Object val = entry.getValue();
-            if (val instanceof String s) {
-                resolved.put(entry.getKey(), resolveFaultString(s, event));
-            } else if (val instanceof Map<?, ?> nested) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> nestedMap = (Map<String, Object>) nested;
-                resolved.put(entry.getKey(), resolveFaultTemplate(nestedMap, event));
-            } else {
-                resolved.put(entry.getKey(), val);
-            }
-        }
-        return resolved;
-    }
-
-    private static String resolveFaultString(String template, FaultEvent event) {
-        return template
-                .replace("${fault.nodeId}", event.node().value())
-                .replace("${fault.type}", event.type().name())
-                .replace("${fault.detail}", event.detail() != null ? event.detail() : "");
     }
 
     private static ObjectMapper createCoercionMapper() {
