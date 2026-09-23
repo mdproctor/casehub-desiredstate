@@ -100,6 +100,9 @@ public class YamlGraphRecorder {
                 moduleScopes = moduleExpanded.moduleScopes();
                 promotedRules = moduleExpanded.content().rules();
                 promotedInvariants = moduleExpanded.content().invariants();
+                if (!moduleExpanded.moduleOutputs().isEmpty()) {
+                    resolver = resolver.withScope("module", moduleExpanded.outputSource());
+                }
             }
 
             boolean hasForEach = effectiveNodes.values().stream()

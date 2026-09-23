@@ -6,12 +6,12 @@ import io.casehub.desiredstate.yaml.model.YamlNode;
 import io.casehub.desiredstate.yaml.model.YamlPattern;
 import io.casehub.desiredstate.yaml.model.YamlRule;
 import io.casehub.yaml.core.module.ModuleExpander;
+import io.casehub.yaml.core.module.ParameterType;
 import io.casehub.yaml.core.module.SectionContentRewriter;
 import io.casehub.yaml.core.module.TypedExpandedModule;
 import io.casehub.yaml.core.module.YamlImport;
 import io.casehub.yaml.core.module.YamlModule;
 import io.casehub.yaml.core.module.YamlModuleParameter;
-import io.casehub.yaml.core.module.ParameterType;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -189,4 +189,36 @@ class DesiredStateModuleBridgeTest {
         YamlNode alerter = result.content().nodes().get("pipe-monitor.alerter");
         assertThat(alerter.dependsOn()).contains("pipe-monitor.monitor");
     }
+
+    @Test
+    void moduleOutputs_resolvedAndAccessibleViaOutputSource() {
+        var monitoringModule = new YamlModule("monitoring",
+                                              Map.of("watched_node_id",
+                                                     YamlModuleParameter.builder()
+                                                                        .type(ParameterType.STRING)
+                                                                        .required().build()),
+                                              Map.of("monitor_id", new io.casehub.yaml.core.module.YamlModuleOutput(
+                                                      ParameterType.STRING, "${var.watched_node_id}-monitor")),
+                                              Map.of("nodes", Map.<String, Object>of(
+                                                      "monitor", Map.<String, Object>of(
+                                                              "type", "monitor",
+                                                              "spec", Map.of("target", "${var.watched_node_id}")))));
+
+        var imports = List.of(new YamlImport("monitoring", "pipe-mon", null,
+                                             Map.of("watched_node_id", "warehouse-sink")));
+
+        TypedExpandedModule<DesiredStateModuleContent> result =
+                ModuleExpander.expand(imports,
+                                      Map.of("monitoring", monitoringModule),
+                                      DesiredStateModuleContent.empty(), bridge);
+
+        assertThat(result.moduleOutputs()).containsKey("pipe-mon");
+        assertThat(result.moduleOutputs().get("pipe-mon"))
+                .containsEntry("monitor_id", "warehouse-sink-monitor");
+
+        io.casehub.yaml.core.resolver.VariableSource outputSource = result.outputSource();
+        assertThat(outputSource.resolve("pipe-mon.monitor_id"))
+                .isEqualTo("warehouse-sink-monitor");
+    }
+
 }
