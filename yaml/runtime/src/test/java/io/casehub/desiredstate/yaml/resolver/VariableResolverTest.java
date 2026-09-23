@@ -127,7 +127,7 @@ class VariableResolverTest {
         var resolver = resolver(Map.of());
         assertThatThrownBy(() -> resolver.resolveString("${each.region}", "test-node"))
                 .isInstanceOf(UnresolvedVariableException.class)
-                .hasMessageContaining("forEach");
+                .hasMessageContaining("each");
     }
 
     // --- Deferred prefixes: resolves ${var.*}, passes through ${match.*} ---
@@ -160,7 +160,7 @@ class VariableResolverTest {
     @Test
     void withEachContext_resolvesEachPrefix() {
         var resolver = resolver(Map.of("batch", "1000"));
-        var eachResolver = resolver.withEachContext(Map.of("region", "us-east"));
+        var eachResolver = resolver.withScope("each", Map.of("region", "us-east")::get);
         String result = eachResolver.resolveString(
                 "s3://${each.region}/${var.batch}", "test-node");
         assertThat(result).isEqualTo("s3://us-east/1000");
@@ -169,7 +169,7 @@ class VariableResolverTest {
     @Test
     void withEachContext_unknownEachVar_throws() {
         var resolver = resolver(Map.of());
-        var eachResolver = resolver.withEachContext(Map.of("region", "us-east"));
+        var eachResolver = resolver.withScope("each", Map.of("region", "us-east")::get);
         assertThatThrownBy(() -> eachResolver.resolveString(
                 "${each.zone}", "test-node"))
                 .isInstanceOf(UnresolvedVariableException.class)
@@ -182,7 +182,7 @@ class VariableResolverTest {
         assertThatThrownBy(() -> resolver.resolveString(
                 "${each.region}", "test-node"))
                 .isInstanceOf(UnresolvedVariableException.class)
-                .hasMessageContaining("forEach");
+                .hasMessageContaining("each");
     }
 
     // --- Chained scope: module parameters override variables ---

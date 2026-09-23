@@ -36,9 +36,7 @@ public class YamlNodeForEachAdapter implements ForEachAdapter<YamlNode> {
     }
 
     @Override
-    public ForEachDirective getForEach(YamlNode element) {
-        return toDirective(element.forEach());
-    }
+    public ForEachDirective getForEach(YamlNode element) {return ForEachDirective.parse(element.forEach());}
 
     @Override
     public String getWhen(YamlNode element) {
@@ -87,14 +85,4 @@ public class YamlNodeForEachAdapter implements ForEachAdapter<YamlNode> {
         return optional ? Map.of("node", resolvedId, "optional", true) : resolvedId;
     }
 
-    static ForEachDirective toDirective(Object forEach) {
-        if (forEach == null) return null;
-        if (forEach instanceof String groupRef) return new ForEachDirective.GroupRef(groupRef);
-        if (forEach instanceof Map<?, ?> m) {
-            String as = (String) m.get("as");
-            List<?> in = (List<?>) m.get("in");
-            return new ForEachDirective.InlineIteration(as, in);
-        }
-        throw new IllegalArgumentException("Invalid forEach: " + forEach);
     }
-}
