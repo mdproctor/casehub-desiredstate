@@ -20,6 +20,10 @@
     <dependencies>
         <dependency>
             <groupId>io.casehub</groupId>
+            <artifactId>casehub-desiredstate-runtime-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
             <artifactId>casehub-desiredstate-api</artifactId>
         </dependency>
         <dependency>
