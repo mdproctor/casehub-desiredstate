@@ -115,7 +115,8 @@ public class DesiredStateGroupLifecycleService implements GroupLifecycleService 
 
     @Override
     public void leaveGroup(String instanceId, String agentId, String tenancyId) {
-        mutateUnit(instanceId, tenancyId, unitGoal -> unitGoal.withoutMember(agentId));
+        mutateUnit(instanceId, tenancyId,
+            unitGoal -> unitGoal.withoutMember(agentId).withoutRolesForAgent(agentId));
     }
 
     @Override

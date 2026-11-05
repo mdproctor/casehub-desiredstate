@@ -26,9 +26,17 @@ public record OrgUnitGoal(
     }
 
     public OrgUnitGoal withMember(String agentId) {
+        if (desiredMembers.contains(agentId)) return this;
         var members = new ArrayList<>(desiredMembers);
         members.add(agentId);
         return new OrgUnitGoal(unit, members, desiredRoles, desiredMissions);
+    }
+
+    public OrgUnitGoal withoutRolesForAgent(String agentId) {
+        var roles = desiredRoles.stream()
+            .filter(r -> !r.agentId().equals(agentId))
+            .toList();
+        return new OrgUnitGoal(unit, desiredMembers, roles, desiredMissions);
     }
 
     public OrgUnitGoal withoutMember(String agentId) {
