@@ -1,9 +1,23 @@
 package io.casehub.eidos.org.runtime;
 
+import io.casehub.desiredstate.api.DesiredStateGraphFactory;
+import io.casehub.desiredstate.runtime.DefaultActualStateAdapterRouter;
+import io.casehub.desiredstate.runtime.DefaultDesiredStateGraphFactory;
+import io.casehub.desiredstate.runtime.FaultPolicyEngine;
+import io.casehub.desiredstate.runtime.LifecycleManager;
+import io.casehub.desiredstate.runtime.ReconciliationLoop;
+import io.casehub.desiredstate.runtime.TransitionPlanner;
+import io.casehub.desiredstate.testing.MockActualStateAdapter;
+import io.casehub.desiredstate.testing.MockTransitionExecutor;
 import io.casehub.eidos.org.api.*;
+import io.smallrye.mutiny.Multi;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,10 +27,33 @@ class EmergencePromotionListenerTest {
         new DesiredStateOrgAdapterTest.InMemoryOrgRegistry();
     private final DesiredStateOrgAdapterTest.InMemoryGroupInstanceStore instanceStore =
         new DesiredStateOrgAdapterTest.InMemoryGroupInstanceStore();
-    private final DesiredStateGroupLifecycleService lifecycleService =
-        new DesiredStateGroupLifecycleService(registry, instanceStore);
-    private final EmergencePromotionListener listener =
-        new EmergencePromotionListener(lifecycleService, registry);
+    private final InMemoryOrgGoalStore goalStore = new InMemoryOrgGoalStore();
+    private final OrgGoalCompiler compiler = new OrgGoalCompiler();
+    private final DesiredStateGraphFactory graphFactory = new DefaultDesiredStateGraphFactory();
+
+    private ReconciliationLoop loop;
+    private DesiredStateGroupLifecycleService lifecycleService;
+    private EmergencePromotionListener listener;
+
+    @BeforeEach
+    void setUp() {
+        var adapter = new MockActualStateAdapter();
+        adapter.setHandledTypes(Set.of(OrgNodeTypes.UNIT, OrgNodeTypes.RELATIONSHIP));
+        var adapterRouter = new DefaultActualStateAdapterRouter(List.of(adapter));
+        loop = ReconciliationLoop.builder(
+            new TransitionPlanner(), new MockTransitionExecutor(), adapterRouter,
+            new FaultPolicyEngine(List.of()), () -> Multi.createFrom().nothing())
+            .debounceWindow(Duration.ofMillis(50)).resyncInterval(Duration.ofHours(1)).build();
+        var lifecycleManager = new LifecycleManager(loop);
+        lifecycleService = new DesiredStateGroupLifecycleService(
+            registry, instanceStore, goalStore, compiler, graphFactory, loop, lifecycleManager);
+        listener = new EmergencePromotionListener(lifecycleService, registry);
+    }
+
+    @AfterEach
+    void tearDown() {
+        loop.shutdown();
+    }
 
     @Test void promotesSwarmTeamToGroup() {
         var data = new SwarmTeamFormedData(
@@ -26,9 +63,8 @@ class EmergencePromotionListenerTest {
         listener.promote(data);
 
         assertThat(registry.findUnit("detected-team-1", "t1")).isPresent();
-        assertThat(instanceStore.findById("detected-team-1", "t1")).isPresent();
-        assertThat(instanceStore.findById("detected-team-1", "t1").get().state())
-            .isEqualTo(GroupLifecycleState.PROPOSED);
+        assertThat(goalStore.load("t1")).isPresent();
+        assertThat(goalStore.load("t1").get().findUnitGoal("detected-team-1")).isPresent();
     }
 
     @Test void coactiveRelationDefaultsToSwarmTopology() {
@@ -117,9 +153,7 @@ class EmergencePromotionListenerTest {
 
         listener.promote(data);
 
-        var gi = instanceStore.findById("team-emerge", "t1");
-        assertThat(gi).isPresent();
-        assertThat(gi.get().formationOrigin()).isEqualTo(FormationOrigin.EMERGENCE);
+        assertThat(goalStore.load("t1").get().findUnitGoal("team-emerge")).isPresent();
     }
 
     @Test void selfDeterminationDefaultsToMidRange() {

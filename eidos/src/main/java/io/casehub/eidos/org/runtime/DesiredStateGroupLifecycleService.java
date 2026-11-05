@@ -1,41 +1,64 @@
 package io.casehub.eidos.org.runtime;
 
+import io.casehub.desiredstate.api.CompilationResult;
+import io.casehub.desiredstate.api.DesiredStateGraph;
+import io.casehub.desiredstate.api.DesiredStateGraphFactory;
+import io.casehub.desiredstate.runtime.LifecycleManager;
+import io.casehub.desiredstate.runtime.ReconciliationLoop;
 import io.casehub.eidos.org.api.*;
 import io.casehub.eidos.org.api.spi.GroupInstanceStore;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.time.Instant;
-import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
+import java.util.function.Function;
 
 @ApplicationScoped
 public class DesiredStateGroupLifecycleService implements GroupLifecycleService {
 
+    private static final int MAX_CAS_ATTEMPTS = 3;
+
     private final OrgRegistry registry;
     private final GroupInstanceStore instanceStore;
+    private final OrgGoalStore goalStore;
+    private final OrgGoalCompiler compiler;
+    private final DesiredStateGraphFactory graphFactory;
+    private final ReconciliationLoop reconciliationLoop;
+    private final LifecycleManager lifecycleManager;
 
     @Inject
-    public DesiredStateGroupLifecycleService(OrgRegistry registry, GroupInstanceStore instanceStore) {
+    public DesiredStateGroupLifecycleService(
+            OrgRegistry registry,
+            GroupInstanceStore instanceStore,
+            OrgGoalStore goalStore,
+            OrgGoalCompiler compiler,
+            DesiredStateGraphFactory graphFactory,
+            ReconciliationLoop reconciliationLoop,
+            LifecycleManager lifecycleManager) {
         this.registry = registry;
         this.instanceStore = instanceStore;
+        this.goalStore = goalStore;
+        this.compiler = compiler;
+        this.graphFactory = graphFactory;
+        this.reconciliationLoop = reconciliationLoop;
+        this.lifecycleManager = lifecycleManager;
     }
 
     @Override
     public GroupInstance createGroup(String specId, String tenancyId, FormationOrigin origin) {
-        registry.findUnit(specId, tenancyId)
+        var unit = registry.findUnit(specId, tenancyId)
             .orElseThrow(() -> new OrgValidationException("specId",
-                "no OrganizationalUnit found for specId '" + specId + "' in tenancy '" + tenancyId + "'"));
-
+                "no OrganizationalUnit found for specId '" + specId
+                    + "' in tenancy '" + tenancyId + "'"));
+        mutate(tenancyId, goal -> goal.withUnitGoal(new OrgUnitGoal(unit)));
         var now = Instant.now();
-        var instance = new GroupInstance(
+        return new GroupInstance(
             specId, specId, tenancyId, GroupLifecycleState.PROPOSED, origin,
             null, null, null,
             List.of(), List.of(), List.of(), now, now, 0);
-        instanceStore.save(instance);
-        return instance;
     }
 
     @Override
@@ -45,139 +68,90 @@ public class DesiredStateGroupLifecycleService implements GroupLifecycleService 
 
     @Override
     public void approveProposal(String instanceId, String tenancyId) {
-        transitionState(instanceId, tenancyId, GroupLifecycleState.PROPOSED, GroupLifecycleState.FORMING);
+        mutateUnit(instanceId, tenancyId, unitGoal -> unitGoal);
     }
 
     @Override
     public void rejectProposal(String instanceId, String tenancyId, String reason) {
-        transitionState(instanceId, tenancyId, GroupLifecycleState.PROPOSED, GroupLifecycleState.REJECTED);
+        mutate(tenancyId, goal -> {
+            requireUnitGoal(goal, instanceId, tenancyId);
+            return goal.withoutUnit(instanceId);
+        });
     }
 
     @Override
     public void activateGroup(String instanceId, String tenancyId) {
-        transitionState(instanceId, tenancyId, GroupLifecycleState.FORMING, GroupLifecycleState.ACTIVE);
+        mutateUnit(instanceId, tenancyId, unitGoal -> unitGoal);
     }
 
     @Override
     public void dissolveGroup(String instanceId, String tenancyId, String reason) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var dissolved = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(),
-            GroupLifecycleState.DISSOLVING, gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            gi.members(), gi.roleAdoptions(), gi.missionCommitments(),
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(dissolved);
+        mutate(tenancyId, goal -> {
+            requireUnitGoal(goal, instanceId, tenancyId);
+            return goal.withoutUnit(instanceId);
+        });
     }
 
     @Override
     public void changeTopology(String instanceId, String newTopology,
                                String newTopologyVocabulary, String tenancyId) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var updated = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), gi.state(), gi.formationOrigin(),
-            newTopology, newTopologyVocabulary, gi.effectiveAuthority(),
-            gi.members(), gi.roleAdoptions(), gi.missionCommitments(),
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(updated);
+        mutateUnit(instanceId, tenancyId,
+            unitGoal -> unitGoal.withUnit(
+                OrganizationalUnit.builder()
+                    .unitId(unitGoal.unit().unitId())
+                    .name(unitGoal.unit().name())
+                    .tenancyId(unitGoal.unit().tenancyId())
+                    .selfDetermination(unitGoal.unit().selfDetermination())
+                    .parentUnitId(unitGoal.unit().parentUnitId())
+                    .topology(newTopology)
+                    .topologyVocabulary(newTopologyVocabulary)
+                    .build()));
     }
 
     @Override
     public void joinGroup(String instanceId, String agentId, String tenancyId) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var members = new ArrayList<>(gi.members());
-        members.add(new ActualMembership(agentId, Instant.now()));
-        var updated = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), gi.state(), gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            members, gi.roleAdoptions(), gi.missionCommitments(),
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(updated);
+        mutateUnit(instanceId, tenancyId, unitGoal -> unitGoal.withMember(agentId));
     }
 
     @Override
     public void leaveGroup(String instanceId, String agentId, String tenancyId) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var members = gi.members().stream()
-            .filter(m -> !m.agentId().equals(agentId))
-            .collect(Collectors.toList());
-        var roleAdoptions = gi.roleAdoptions().stream()
-            .filter(ra -> !ra.agentId().equals(agentId))
-            .collect(Collectors.toList());
-        var updated = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), gi.state(), gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            members, roleAdoptions, gi.missionCommitments(),
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(updated);
+        mutateUnit(instanceId, tenancyId, unitGoal -> unitGoal.withoutMember(agentId));
     }
 
     @Override
-    public void adoptRole(String instanceId, String agentId, String roleName, String tenancyId) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var adoptions = new ArrayList<>(gi.roleAdoptions());
-        adoptions.add(new RoleAdoption(agentId, roleName, null, Instant.now()));
-        var updated = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), gi.state(), gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            gi.members(), adoptions, gi.missionCommitments(),
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(updated);
+    public void adoptRole(String instanceId, String agentId, String roleName,
+                          String tenancyId) {
+        mutateUnit(instanceId, tenancyId,
+            unitGoal -> unitGoal.withRole(new DesiredRoleAdoption(agentId, roleName)));
     }
 
     @Override
-    public void releaseRole(String instanceId, String agentId, String roleName, String tenancyId) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var adoptions = gi.roleAdoptions().stream()
-            .filter(ra -> !(ra.agentId().equals(agentId) && ra.roleName().equals(roleName)))
-            .collect(Collectors.toList());
-        var updated = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), gi.state(), gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            gi.members(), adoptions, gi.missionCommitments(),
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(updated);
+    public void releaseRole(String instanceId, String agentId, String roleName,
+                            String tenancyId) {
+        mutateUnit(instanceId, tenancyId,
+            unitGoal -> unitGoal.withoutRole(agentId, roleName));
     }
 
     @Override
-    public void commitToMission(String instanceId, String agentId, String missionName, String tenancyId) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var commitments = new ArrayList<>(gi.missionCommitments());
-        commitments.add(new MissionCommitment(agentId, missionName, Instant.now()));
-        var updated = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), gi.state(), gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            gi.members(), gi.roleAdoptions(), commitments,
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(updated);
+    public void commitToMission(String instanceId, String agentId, String missionName,
+                                String tenancyId) {
+        mutateUnit(instanceId, tenancyId,
+            unitGoal -> unitGoal.withMission(
+                new DesiredMissionCommitment(agentId, missionName)));
     }
 
     @Override
-    public void withdrawFromMission(String instanceId, String agentId, String missionName, String tenancyId) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var commitments = gi.missionCommitments().stream()
-            .filter(mc -> !(mc.agentId().equals(agentId) && mc.missionName().equals(missionName)))
-            .collect(Collectors.toList());
-        var updated = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), gi.state(), gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            gi.members(), gi.roleAdoptions(), commitments,
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(updated);
+    public void withdrawFromMission(String instanceId, String agentId,
+                                     String missionName, String tenancyId) {
+        mutateUnit(instanceId, tenancyId,
+            unitGoal -> unitGoal.withoutMission(agentId, missionName));
     }
 
     @Override
-    public void fulfillMission(String instanceId, String missionName, String tenancyId) {
-        var gi = requireInstance(instanceId, tenancyId);
-        var commitments = gi.missionCommitments().stream()
-            .filter(mc -> !mc.missionName().equals(missionName))
-            .collect(Collectors.toList());
-        var updated = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), gi.state(), gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            gi.members(), gi.roleAdoptions(), commitments,
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(updated);
+    public void fulfillMission(String instanceId, String missionName,
+                               String tenancyId) {
+        mutateUnit(instanceId, tenancyId,
+            unitGoal -> unitGoal.withoutMissionByName(missionName));
     }
 
     @Override
@@ -195,24 +169,48 @@ public class DesiredStateGroupLifecycleService implements GroupLifecycleService 
         return instanceStore.find(new GroupInstanceQuery(tenancyId, null, null, agentId));
     }
 
-    private GroupInstance requireInstance(String instanceId, String tenancyId) {
-        return instanceStore.findById(instanceId, tenancyId)
-            .orElseThrow(() -> new OrgValidationException("instanceId",
-                "no GroupInstance found for '" + instanceId + "' in tenancy '" + tenancyId + "'"));
+    private void mutateUnit(String instanceId, String tenancyId,
+                             Function<OrgUnitGoal, OrgUnitGoal> unitMutation) {
+        mutate(tenancyId, goal -> {
+            var unitGoal = requireUnitGoal(goal, instanceId, tenancyId);
+            return goal.withUnitGoal(unitMutation.apply(unitGoal));
+        });
     }
 
-    private void transitionState(String instanceId, String tenancyId,
-                                  GroupLifecycleState expectedFrom, GroupLifecycleState to) {
-        var gi = requireInstance(instanceId, tenancyId);
-        if (gi.state() != expectedFrom) {
-            throw new OrgValidationException("state",
-                "expected " + expectedFrom + " but found " + gi.state());
+    private OrgUnitGoal requireUnitGoal(OrgGoal goal, String instanceId, String tenancyId) {
+        return goal.findUnitGoal(instanceId)
+            .orElseThrow(() -> new OrgValidationException("instanceId",
+                "no unit found for '" + instanceId + "' in tenancy '" + tenancyId + "'"));
+    }
+
+    private void mutate(String tenancyId, Function<OrgGoal, OrgGoal> mutation) {
+        OrgGoal goal = goalStore.load(tenancyId).orElse(OrgGoal.empty());
+        OrgGoal updated = mutation.apply(goal);
+        CompilationResult result = compiler.compile(updated, graphFactory);
+
+        if (!reconciliationLoop.tenantIds().contains(tenancyId)) {
+            lifecycleManager.start(tenancyId, result);
+            goalStore.store(tenancyId, updated);
+            return;
         }
-        var transitioned = new GroupInstance(
-            gi.instanceId(), gi.specId(), gi.tenancyId(), to, gi.formationOrigin(),
-            gi.topology(), gi.topologyVocabulary(), gi.effectiveAuthority(),
-            gi.members(), gi.roleAdoptions(), gi.missionCommitments(),
-            gi.createdAt(), Instant.now(), gi.version() + 1);
-        instanceStore.save(transitioned);
+
+        for (int attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+            DesiredStateGraph current = reconciliationLoop.getDesired(tenancyId);
+            DesiredStateGraph newGraph = switch (result) {
+                case CompilationResult.SingleGraph sg -> sg.graph();
+                case CompilationResult.Lifecycle lc ->
+                    throw new UnsupportedOperationException(
+                        "Org domain uses single-graph compilation");
+            };
+            if (reconciliationLoop.compareAndSetDesired(tenancyId, current, newGraph)) {
+                goalStore.store(tenancyId, updated);
+                return;
+            }
+            goal = goalStore.load(tenancyId).orElse(OrgGoal.empty());
+            updated = mutation.apply(goal);
+            result = compiler.compile(updated, graphFactory);
+        }
+        throw new ConcurrentModificationException(
+            "CAS failed after " + MAX_CAS_ATTEMPTS + " attempts for tenant " + tenancyId);
     }
 }
