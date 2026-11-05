@@ -118,6 +118,45 @@ class OrgGoalCompilerTest {
         assertThat(graph.dependencies()).isEmpty();
     }
 
+    @Test void lowSelfDeterminationSetsHumanGating() {
+        var unit = OrganizationalUnit.builder()
+            .unitId("guarded").name("Guarded").tenancyId("t")
+            .selfDetermination(0.2)
+            .build();
+        var goal = new OrgGoalCompiler.OrgGoal(List.of(unit), List.of());
+        var result = compiler.compile(goal, factory);
+        var graph = ((CompilationResult.SingleGraph) result).graph();
+
+        var node = graph.nodes().get(NodeId.of("guarded"));
+        assertThat(node.humanGating()).isEqualTo(io.casehub.desiredstate.api.HumanGating.ALL);
+    }
+
+    @Test void highSelfDeterminationNoHumanGating() {
+        var unit = OrganizationalUnit.builder()
+            .unitId("autonomous").name("Autonomous").tenancyId("t")
+            .selfDetermination(0.8)
+            .build();
+        var goal = new OrgGoalCompiler.OrgGoal(List.of(unit), List.of());
+        var result = compiler.compile(goal, factory);
+        var graph = ((CompilationResult.SingleGraph) result).graph();
+
+        var node = graph.nodes().get(NodeId.of("autonomous"));
+        assertThat(node.humanGating()).isEqualTo(io.casehub.desiredstate.api.HumanGating.NONE);
+    }
+
+    @Test void boundarySelfDeterminationAtThreshold() {
+        var unit = OrganizationalUnit.builder()
+            .unitId("boundary").name("Boundary").tenancyId("t")
+            .selfDetermination(0.3)
+            .build();
+        var goal = new OrgGoalCompiler.OrgGoal(List.of(unit), List.of());
+        var result = compiler.compile(goal, factory);
+        var graph = ((CompilationResult.SingleGraph) result).graph();
+
+        var node = graph.nodes().get(NodeId.of("boundary"));
+        assertThat(node.humanGating()).isEqualTo(io.casehub.desiredstate.api.HumanGating.NONE);
+    }
+
     @Test void relationshipNodeIdIsStable() {
         var rel = AgentRelationship.builder()
             .sourceAgentId("a").targetAgentId("b")

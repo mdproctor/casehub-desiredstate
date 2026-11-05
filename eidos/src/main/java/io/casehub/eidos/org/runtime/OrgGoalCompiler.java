@@ -34,7 +34,8 @@ public class OrgGoalCompiler implements GoalCompiler<OrgGoalCompiler.OrgGoal> {
 
         for (var unit : goal.units()) {
             var nodeId = NodeId.of(unit.unitId());
-            nodes.add(new DesiredNode(nodeId, new OrgUnitNodeSpec(unit), HumanGating.NONE));
+            var gating = unit.selfDetermination() < 0.3 ? HumanGating.ALL : HumanGating.NONE;
+            nodes.add(new DesiredNode(nodeId, new OrgUnitNodeSpec(unit), gating));
             if (unit.parentUnitId() != null) {
                 deps.add(new Dependency(nodeId, NodeId.of(unit.parentUnitId())));
             }
