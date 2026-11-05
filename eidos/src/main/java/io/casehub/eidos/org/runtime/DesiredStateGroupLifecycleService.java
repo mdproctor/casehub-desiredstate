@@ -68,7 +68,8 @@ public class DesiredStateGroupLifecycleService implements GroupLifecycleService 
 
     @Override
     public void approveProposal(String instanceId, String tenancyId) {
-        mutateUnit(instanceId, tenancyId, unitGoal -> unitGoal);
+        var goal = goalStore.load(tenancyId).orElse(OrgGoal.empty());
+        requireUnitGoal(goal, instanceId, tenancyId);
     }
 
     @Override
@@ -81,7 +82,8 @@ public class DesiredStateGroupLifecycleService implements GroupLifecycleService 
 
     @Override
     public void activateGroup(String instanceId, String tenancyId) {
-        mutateUnit(instanceId, tenancyId, unitGoal -> unitGoal);
+        var goal = goalStore.load(tenancyId).orElse(OrgGoal.empty());
+        requireUnitGoal(goal, instanceId, tenancyId);
     }
 
     @Override
@@ -95,17 +97,25 @@ public class DesiredStateGroupLifecycleService implements GroupLifecycleService 
     @Override
     public void changeTopology(String instanceId, String newTopology,
                                String newTopologyVocabulary, String tenancyId) {
-        mutateUnit(instanceId, tenancyId,
-            unitGoal -> unitGoal.withUnit(
-                OrganizationalUnit.builder()
-                    .unitId(unitGoal.unit().unitId())
-                    .name(unitGoal.unit().name())
-                    .tenancyId(unitGoal.unit().tenancyId())
-                    .selfDetermination(unitGoal.unit().selfDetermination())
-                    .parentUnitId(unitGoal.unit().parentUnitId())
-                    .topology(newTopology)
-                    .topologyVocabulary(newTopologyVocabulary)
-                    .build()));
+        mutateUnit(instanceId, tenancyId, unitGoal -> {
+            var u = unitGoal.unit();
+            var updated = OrganizationalUnit.builder()
+                .unitId(u.unitId()).name(u.name())
+                .kind(u.kind()).kindVocabulary(u.kindVocabulary())
+                .tenancyId(u.tenancyId()).parentUnitId(u.parentUnitId())
+                .topology(newTopology).topologyVocabulary(newTopologyVocabulary)
+                .authorityModel(u.authorityModel())
+                .selfDetermination(u.selfDetermination())
+                .policy(u.policy())
+                .members(u.members())
+                .roleSpecs(u.roleSpecs())
+                .missions(u.missions())
+                .capabilities(u.capabilities())
+                .goals(u.goals())
+                .constraints(u.constraints())
+                .build();
+            return unitGoal.withUnit(updated);
+        });
     }
 
     @Override
