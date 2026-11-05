@@ -5,7 +5,7 @@ date: 2026-11-05
 entry_type: article
 subtype: essay
 projects: [casehubio/casehub-desiredstate]
-tags: [desired-state, eidos, organisation, reconciliation, drift, emergence, multi-agent, self-organisation]
+tags: [desired-state, eidos, organisation, reconciliation, drift, emergence, multi-agent, self-organisation, plan-approval, governance]
 series: desired-state-foundations
 ---
 
@@ -91,16 +91,34 @@ Three implications for platform builders:
 
 **Organisational structure is another resource type.** The same tools, patterns, and skills that work for infrastructure management — drift detection, fault escalation, plan approval, lifecycle state machines — work for org management. You don't need a separate orchestration layer for teams. You need a provisioner and an adapter.
 
-**Autonomy is a continuous value, not a binary gate.** The `selfDetermination` field isn't a flag. It's a [0.0, 1.0] range that governs compile-time gating (HumanGating below 0.3), runtime drift policy (exemption above 0.7), and future plan approval policy (per the spec). One value, three enforcement points. Operators can tune the balance between control and autonomy per group without writing code.
+**Autonomy is a continuous value, not a binary gate.** The `selfDetermination` field isn't a flag. It's a [0.0, 1.0] range that governs compile-time gating (HumanGating below 0.3), plan approval policy (RequireApproval below 0.3), and runtime drift policy (exemption above 0.7). One value, three enforcement points. Operators can tune the balance between control and autonomy per group without writing code.
 
 **Emergence is declarative, not procedural.** Promoting an observed team to a declared group isn't a special procedure. It's writing a spec and letting the reconciliation loop do the rest. The listener is 50 lines of code because all the hard work — provisioning, fault handling, drift detection, lifecycle management — already exists in the runtime. The emergence listener doesn't manage groups. It declares intent. The runtime manages groups.
 
+## The Third Gate: Plan Approval
+
+HumanGating controls individual nodes. DriftPolicy controls individual drift events. But a transition plan is a composite — it may contain nodes from multiple groups with different autonomy levels. Should a plan that adds a high-autonomy swarm team alongside a low-autonomy compliance group be auto-approved because one group allows it, or gated because the other requires oversight?
+
+The answer is the most restrictive group wins. `OrgPlanApprovalPolicy` implements the `PlanApprovalPolicy` SPI — the same SPI that Terraform bridge adapters use for infrastructure plan review. It iterates every step in the transition plan (additions, removals, suspensions, resumptions), finds every `OrgUnitNodeSpec`, extracts the minimum `selfDetermination` across the whole plan, and gates accordingly.
+
+![Plan approval gate](images/plan-approval-gate.svg)
+
+Below 0.3: `RequireApproval`. The plan sits in the `PlanApprovalGate` until a human reviews and approves it. At or above 0.3: `AutoApprove`. The plan executes immediately.
+
+This is the third enforcement point for `selfDetermination` — and the reason a continuous value matters more than a binary flag. The same number governs three different scopes:
+
+- **Compile-time (per node):** HumanGating.ALL below 0.3 — the provisioner won't execute without approval for each individual node action
+- **Plan-time (per plan):** RequireApproval below 0.3 — the entire transition plan is held for review before any provisioner runs
+- **Runtime (per drift event):** Exempt above 0.7 — the reconciliation loop won't correct this drift because the group is operating within its granted autonomy
+
+Three gates, one dial. The operator sets a number between 0 and 1, and the governance posture follows. A newly formed group starts at 0.0 (fully controlled). As it proves stable, the operator raises the value. At 0.5, the group operates normally with standard reconciliation. At 0.8, the group self-governs its topology. No policy code changes. No configuration files. One field on the spec.
+
+The implementation is 40 lines. The `PlanApprovalPolicy` SPI already exists — it was built for infrastructure plan review. `OrgPlanApprovalPolicy` just provides a domain-specific evaluation function. The runtime handles the rest: storing pending plans, polling for approval, invalidating stale plans when the desired state changes while waiting.
+
 ## What's Not Here Yet
 
-Two follow-ups are tracked:
-
-`OrgPlanApprovalPolicy` — the spec defines a `PlanApprovalPolicy` that evaluates entire transition plans based on the selfDetermination of the most restrictive group in the plan. The current implementation uses per-node HumanGating, which is a coarser gate. The plan-level policy is the right long-term mechanism.
+One follow-up is tracked:
 
 Full desired-state-first loop — the `GroupLifecycleService` currently writes `GroupInstanceStore` directly. The spec's vision is that every mutation writes the desired graph first, then lets the reconciliation loop drive the actual changes. This requires `LifecycleManager` integration that's a separate wiring concern.
 
-Both are refinements, not gaps. The core loop — declare, observe, diff, plan, execute, repeat — is complete. The org chart heals itself.t
+That is a refinement, not a gap. The core loop — declare, observe, diff, plan, approve, execute, repeat — is complete. The org chart heals itself.t
