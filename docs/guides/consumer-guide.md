@@ -379,6 +379,70 @@ The runtime emits CloudEvents during reconciliation:
 
 ---
 
+## Cardinality Constraints
+
+`@Match`, `@DirectDep`, and `@Reaches` annotations support `minCount`/`maxCount` cardinality fields. `PatternParameterDescriptor` carries cardinality metadata. `GraphInvariantEngine` validates both match-level and expansion-level cardinality at build time. YAML patterns support `minCount`/`maxCount` via `YamlPattern` converter + validation.
+
+## TypeScript SDK (ts-core)
+
+`TsGraphRecorder` enables graph definitions in TypeScript via `defineGraph()`, `defineLifecycle()`, and `node()` helpers. Produces a JSON envelope consumed by `GoalCompiler`. `TsDesiredStateProcessor` processes TypeScript graphs with cross-surface filter broadening. Cross-surface `@GraphRule` annotations apply rules across Java and TypeScript graph surfaces.
+
+## YAML Lifecycle Hooks
+
+`verify`, `notify`, and `wait` hooks are available in YAML lifecycle definitions for declarative lifecycle management — verify a condition, send a notification, or wait for a duration/event before proceeding.
+
+---
+
+## Spring Boot Integration
+
+The desiredstate runtime can be embedded in Spring Boot applications via auto-configuration modules. Each module uses `@AutoConfiguration` + `@ConditionalOnMissingBean` — add the dependency and the beans are registered automatically.
+
+### Maven Dependencies
+
+```xml
+<!-- Core runtime (required) -->
+<dependency>
+    <groupId>io.casehub</groupId>
+    <artifactId>casehub-desiredstate-runtime-spring</artifactId>
+</dependency>
+
+<!-- Annotation-driven graphs (@DesiredState, @Node, @GraphRule) -->
+<dependency>
+    <groupId>io.casehub</groupId>
+    <artifactId>casehub-desiredstate-annotations-spring</artifactId>
+</dependency>
+
+<!-- YAML-driven graphs (META-INF/desiredstate/*.yaml) -->
+<dependency>
+    <groupId>io.casehub</groupId>
+    <artifactId>casehub-desiredstate-yaml-spring</artifactId>
+</dependency>
+
+<!-- TypeScript DSL graphs (META-INF/desiredstate/*.ds.json) -->
+<dependency>
+    <groupId>io.casehub</groupId>
+    <artifactId>casehub-desiredstate-ts-spring</artifactId>
+</dependency>
+
+<!-- Durable fault counts + reconciliation state via JPA -->
+<dependency>
+    <groupId>io.casehub</groupId>
+    <artifactId>casehub-desiredstate-persistence-spring-jpa</artifactId>
+</dependency>
+```
+
+### How It Works
+
+**Annotation scanning:** `annotations-spring` reads `META-INF/jandex.idx` from all classpath JARs at startup. Classes annotated with `@DesiredState`, `@DeclareNode`, `@GraphRule`, `@GraphInvariant`, and `@FaultPolicyDef` are discovered and registered as `GoalCompiler` and `ThresholdFaultPolicy` beans — same behaviour as the Quarkus build extension, but at startup rather than build time.
+
+**YAML graphs:** `yaml-spring` discovers `META-INF/desiredstate/*.yaml` and `META-INF/desiredstate/modules/*.yaml` on the classpath using Spring's `PathMatchingResourcePatternResolver`. `@NodeTypeId` classes are scanned from Jandex indexes. Each YAML graph file becomes a `GoalCompiler` bean.
+
+**Persistence:** `persistence-spring-jpa` provides `FaultCountStore` and `ReconciliationStateStore` implementations backed by JPA. Uses Spring `@Transactional` with constructor-injected `EntityManager`. Requires a `DataSource` bean and Flyway migrations at `classpath:db/desiredstate/migration/`.
+
+**SPI fallbacks:** `runtime-spring` registers `@ConditionalOnMissingBean` defaults for `FaultCountStore` (in-memory), `ReconciliationStateStore` (in-memory), `HumanNodeHandler` (no-op), and `PendingApprovalHandler` (no-op). Application-provided beans take precedence.
+
+---
+
 ## What This Repo Does NOT Do
 
 - Persist desired-state graphs -- graphs are in-memory per tenant
