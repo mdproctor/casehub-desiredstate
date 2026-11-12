@@ -1,5 +1,7 @@
 package io.casehub.desiredstate.yaml.model;
 
+import io.casehub.yaml.core.foreach.IterationGroup;
+
 import java.util.List;
 import java.util.Map;
 
@@ -11,7 +13,7 @@ public record YamlGraph(
         Map<String, YamlInvariant> invariants,
         Map<String, YamlRule> rules,
         YamlLifecycle lifecycle,
-        Map<String, YamlIterationGroup> iterations,
+        Map<String, IterationGroup> iterations,
         List<YamlImport> imports) {
 
     public YamlGraph {

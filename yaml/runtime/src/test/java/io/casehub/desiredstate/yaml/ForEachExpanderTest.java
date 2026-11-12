@@ -1,18 +1,22 @@
 package io.casehub.desiredstate.yaml;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.casehub.desiredstate.api.Dependency;
 import io.casehub.desiredstate.api.DesiredNode;
 import io.casehub.desiredstate.api.NodeId;
 import io.casehub.desiredstate.api.NodeSpec;
 import io.casehub.desiredstate.api.NodeType;
-import io.casehub.desiredstate.yaml.model.YamlIterationGroup;
 import io.casehub.desiredstate.yaml.model.YamlNode;
 import io.casehub.desiredstate.yaml.registry.NodeSpecRegistry;
+import io.casehub.yaml.core.foreach.ExpansionResult;
+import io.casehub.yaml.core.foreach.IterationGroup;
+import io.casehub.yaml.core.foreach.IterationValueExpander;
 import io.casehub.yaml.core.resolver.VariableResolver;
 import io.casehub.yaml.core.resolver.VariableSource;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +42,53 @@ class ForEachExpanderTest {
             Map.of("var", (VariableSource) Map.<String, String>of()::get),
             Set.of("match", "fault"));
 
+    record ExpandedNodes(List<DesiredNode> nodes, List<Dependency> dependencies, Set<String> excludedNodeIds) {}
+
+    private ExpandedNodes expand(Map<String, YamlNode> nodes, Map<String, IterationGroup> iterations,
+                                  VariableResolver resolver, int limit) {
+        return expand(nodes, iterations, resolver, limit, null);
+    }
+
+    private ExpandedNodes expand(Map<String, YamlNode> nodes, Map<String, IterationGroup> iterations,
+                                  VariableResolver resolver, int limit, IterationValueExpander valueExpander) {
+        var adapter = new YamlNodeForEachAdapter();
+        ExpansionResult<YamlNode> expanded = io.casehub.yaml.core.foreach.ForEachExpander.expand(
+                nodes, iterations, resolver, adapter, limit, valueExpander);
+        List<DesiredNode> desiredNodes = new ArrayList<>();
+        List<Dependency> deps = new ArrayList<>();
+        for (Map.Entry<String, YamlNode> entry : expanded.elements().entrySet()) {
+            String nodeId = entry.getKey();
+            YamlNode yamlNode = entry.getValue();
+            Class<? extends NodeSpec> specClass = registry.resolve(yamlNode.type());
+            NodeSpec spec = mapper.convertValue(yamlNode.spec(), specClass);
+            desiredNodes.add(new DesiredNode(NodeId.of(nodeId), spec, yamlNode.humanGating()));
+            for (Object dep : yamlNode.dependsOn()) {
+                String depId = YamlNode.dependencyNodeId(dep);
+                deps.add(new Dependency(NodeId.of(nodeId), NodeId.of(depId)));
+            }
+        }
+        return new ExpandedNodes(desiredNodes, deps, expanded.excludedIds());
+    }
+
+    private IterationValueExpander jsonArrayExpander() {
+        return (value, ctx) -> {
+            if (value.startsWith("[")) {
+                try {
+                    List<?> parsed = mapper.readValue(value, new TypeReference<List<?>>() {});
+                    return parsed.stream().map(item -> {
+                        if (!(item instanceof String)) {
+                            throw new IllegalArgumentException("forEach group '" + ctx + "': values must be strings");
+                        }
+                        return (String) item;
+                    }).toList();
+                } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                    throw new IllegalArgumentException("forEach group '" + ctx + "': not a valid JSON array: " + value, e);
+                }
+            }
+            return List.of(value);
+        };
+    }
+
     @Test
     void inlineForEach_stampsThreeCopies() {
         Map<String, Object> inlineForEach = Map.of("as", "region",
@@ -48,8 +99,7 @@ class ForEachExpanderTest {
                        "uri", "s3://${each.region}/data.csv"),
                 List.of(), null, null, inlineForEach, null, null));
 
-        var result = ForEachExpander.expand(nodes, Map.of(), resolver,
-                registry, mapper, 1000);
+        var result = expand(nodes, Map.of(), resolver, 1000);
 
         assertThat(result.nodes()).hasSize(3);
         assertThat(result.nodes().stream().map(n -> n.id().value()).toList())
@@ -67,7 +117,7 @@ class ForEachExpanderTest {
     @Test
     void namedGroup_alignedDependencies() {
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", List.of("us-east", "eu-west")));
+                new IterationGroup("region", List.of("us-east", "eu-west")));
         var nodes = new LinkedHashMap<String, YamlNode>();
         nodes.put("regional-source", new YamlNode("data-source",
                 Map.of("name", "${each.region}", "uri", "s3://${each.region}"),
@@ -76,8 +126,7 @@ class ForEachExpanderTest {
                 Map.of("name", "${each.region}-ingest", "uri", ""),
                 List.of("regional-source"), null, null, "regional", null, null));
 
-        var result = ForEachExpander.expand(nodes, iterations, resolver,
-                registry, mapper, 1000);
+        var result = expand(nodes, iterations, resolver, 1000);
 
         assertThat(result.nodes()).hasSize(4);
         assertThat(result.dependencies()).contains(
@@ -94,7 +143,7 @@ class ForEachExpanderTest {
     @Test
     void forEachDependsOnFixedNode_eachCopyDependsOnSame() {
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", List.of("us-east", "eu-west")));
+                new IterationGroup("region", List.of("us-east", "eu-west")));
         var nodes = new LinkedHashMap<String, YamlNode>();
         nodes.put("fixed-db", new YamlNode("data-source",
                 Map.of("name", "db", "uri", "jdbc://db"),
@@ -103,8 +152,7 @@ class ForEachExpanderTest {
                 Map.of("name", "${each.region}", "uri", ""),
                 List.of("fixed-db"), null, null, "regional", null, null));
 
-        var result = ForEachExpander.expand(nodes, iterations, resolver,
-                registry, mapper, 1000);
+        var result = expand(nodes, iterations, resolver, 1000);
 
         assertThat(result.nodes()).hasSize(3);
         assertThat(result.dependencies()).contains(
@@ -123,8 +171,7 @@ class ForEachExpanderTest {
                 Map.of("name", "${each.idx}", "uri", ""),
                 List.of(), null, null, inlineForEach, null, null));
 
-        assertThatThrownBy(() -> ForEachExpander.expand(nodes, Map.of(),
-                resolver, registry, mapper, 3))
+        assertThatThrownBy(() -> expand(nodes, Map.of(), resolver, 3))
                 .hasMessageContaining("node")
                 .hasMessageContaining("5")
                 .hasMessageContaining("3");
@@ -136,14 +183,13 @@ class ForEachExpanderTest {
                 Map.of("var", (VariableSource) Map.of("regions", "[\"us-east\", \"eu-west\"]")::get),
                 Set.of("match", "fault"));
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", "${var.regions}"));
+                new IterationGroup("region", "${var.regions}"));
         var nodes = new LinkedHashMap<String, YamlNode>();
         nodes.put("source", new YamlNode("data-source",
                 Map.of("name", "${each.region}", "uri", ""),
                 List.of(), null, null, "regional", null, null));
 
-        var result = ForEachExpander.expand(nodes, iterations, resolver,
-                registry, mapper, 1000);
+        var result = expand(nodes, iterations, resolver, 1000, jsonArrayExpander());
 
         assertThat(result.nodes()).hasSize(2);
         assertThat(result.nodes().stream().map(n -> n.id().value()).toList())
@@ -162,8 +208,7 @@ class ForEachExpanderTest {
                 Map.of("name", "${each.region}", "uri", ""),
                 List.of(), null, "${var.enable_sources}", inlineForEach, null, null));
 
-        var result = ForEachExpander.expand(nodes, Map.of(), resolver,
-                registry, mapper, 1000);
+        var result = expand(nodes, Map.of(), resolver, 1000);
 
         assertThat(result.nodes()).isEmpty();
         assertThat(result.excludedNodeIds())
@@ -178,8 +223,7 @@ class ForEachExpanderTest {
                 Map.of("name", "x", "uri", ""),
                 List.of(), null, null, inlineForEach, null, null));
 
-        var result = ForEachExpander.expand(nodes, Map.of(), resolver,
-                registry, mapper, 1000);
+        var result = expand(nodes, Map.of(), resolver, 1000);
 
         assertThat(result.nodes()).isEmpty();
     }
@@ -187,7 +231,7 @@ class ForEachExpanderTest {
     @Test
     void mixedForEachAndFixed_correctNodeCount() {
         var iterations = Map.of("regional",
-                new YamlIterationGroup("region", List.of("us-east", "eu-west")));
+                new IterationGroup("region", List.of("us-east", "eu-west")));
         var nodes = new LinkedHashMap<String, YamlNode>();
         nodes.put("fixed-db", new YamlNode("data-source",
                 Map.of("name", "db", "uri", "jdbc://db"),
@@ -199,8 +243,7 @@ class ForEachExpanderTest {
                 Map.of("name", "${each.region}", "uri", ""),
                 List.of("fixed-db"), null, null, "regional", null, null));
 
-        var result = ForEachExpander.expand(nodes, iterations, resolver,
-                registry, mapper, 1000);
+        var result = expand(nodes, iterations, resolver, 1000);
 
         assertThat(result.nodes()).hasSize(4);
     }
